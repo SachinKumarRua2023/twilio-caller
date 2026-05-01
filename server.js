@@ -163,17 +163,18 @@ app.post('/api/call', async (req, res) => {
   try {
     const client = twilio(TWILIO_ACCOUNT_SID, TWILIO_AUTH_TOKEN);
 
-    // Call the agent's physical phone first.
-    // When they pick up the TwiML dials the target number.
+    // Call the TARGET first. When they answer, TwiML bridges to the agent's
+    // physical phone. This avoids Indian carrier IVR auto-answering the agent
+    // leg before the agent picks up, which would cause silence for the target.
     const call = await client.calls.create({
-      to:   agentPhone,
+      to,
       from: TWILIO_NUMBER,
       statusCallback:      `${base}/api/status`,
       statusCallbackMethod:'POST',
       statusCallbackEvent: ['initiated','ringing','answered','completed'],
       twiml: `<?xml version="1.0" encoding="UTF-8"?>
 <Response>
-  <Say voice="alice">Connecting your call. Please wait.</Say>
+  <Say voice="alice">Please wait, connecting your call.</Say>
   <Dial callerId="${TWILIO_NUMBER}"
         record="record-from-ringing"
         recordingStatusCallback="${base}/api/recording"
@@ -181,9 +182,7 @@ app.post('/api/call', async (req, res) => {
         action="${base}/api/dial-done"
         method="POST"
         timeout="30">
-    <Number statusCallbackEvent="initiated ringing answered completed"
-            statusCallback="${base}/api/status"
-            statusCallbackMethod="POST">${to}</Number>
+    <Number>${agentPhone}</Number>
   </Dial>
 </Response>`,
     });
