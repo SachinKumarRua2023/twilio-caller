@@ -148,7 +148,15 @@ async function logCallToOdoo(info) {
     let partnerId = info.odooPartnerId || null;
     if (!partnerId) {
       const p = await findPartner(info.to);
-      if (p) partnerId = p.id;
+      if (p) {
+        partnerId = p.id;
+      } else {
+        // No contact found — auto-create one so the call is never lost
+        partnerId = await rpc(c.object, 'execute_kw', [
+          ODOO_DB, uid, ODOO_PASS, 'res.partner', 'create',
+          [{ name: info.odooPartnerName || info.to, mobile: info.to }],
+        ]);
+      }
     }
     if (!partnerId) return;
 
