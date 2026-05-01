@@ -1,14 +1,11 @@
 {
   "name": "twilio-caller",
   "version": "1.0.0",
-  "description": "Twilio phone call web app",
   "main": "server.js",
-  "scripts": {
-    "start": "node server.js",
-    "dev": "node server.js"
-  },
+  "scripts": { "start": "node server.js" },
   "dependencies": {
     "express": "^4.18.2",
-    "twilio": "^5.0.0"
+    "twilio": "^5.0.0",
+    "xmlrpc": "^1.3.2"
   }
 }

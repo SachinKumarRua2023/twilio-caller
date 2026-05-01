@@ -3,153 +3,362 @@
 <head>
 <meta charset="UTF-8"/>
 <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
-<title>TwilioCaller</title>
+<title>CallCenter — Twilio + Odoo</title>
 <link href="https://fonts.googleapis.com/css2?family=Space+Mono:wght@400;700&family=DM+Sans:wght@300;400;500&display=swap" rel="stylesheet"/>
 <style>
-  :root {
-    --bg: #0a0a0f;
-    --surface: #12121a;
-    --card: #1a1a26;
-    --border: #2a2a3e;
-    --accent: #00ff88;
-    --accent2: #7c3aed;
-    --red: #ff4466;
-    --text: #e8e8f0;
-    --muted: #6666aa;
-    --glow: 0 0 30px rgba(0,255,136,0.15);
-  }
-  * { margin:0; padding:0; box-sizing:border-box; }
-  body {
-    background: var(--bg);
-    color: var(--text);
-    font-family: 'DM Sans', sans-serif;
-    min-height: 100vh;
-    display: flex;
-    flex-direction: column;
-    align-items: center;
-    justify-content: center;
-    padding: 20px;
-    background-image:
-      radial-gradient(ellipse at 20% 50%, rgba(124,58,237,0.08) 0%, transparent 60%),
-      radial-gradient(ellipse at 80% 20%, rgba(0,255,136,0.05) 0%, transparent 50%);
-  }
-  .app { width: 100%; max-width: 420px; }
+:root {
+  --bg:      #0a0a0f;
+  --surface: #12121a;
+  --card:    #1a1a26;
+  --border:  #2a2a3e;
+  --accent:  #00ff88;
+  --accent2: #7c3aed;
+  --red:     #ff4466;
+  --text:    #e8e8f0;
+  --muted:   #6666aa;
+  --glow:    0 0 30px rgba(0,255,136,0.15);
+}
+* { margin:0; padding:0; box-sizing:border-box; }
+body {
+  background: var(--bg); color: var(--text);
+  font-family: 'DM Sans', sans-serif; min-height: 100vh;
+  display: flex; align-items: flex-start; justify-content: center;
+  padding: 20px;
+  background-image:
+    radial-gradient(ellipse at 20% 50%, rgba(124,58,237,0.08) 0%, transparent 60%),
+    radial-gradient(ellipse at 80% 20%, rgba(0,255,136,0.05) 0%, transparent 50%);
+}
 
-  .header { text-align:center; margin-bottom: 32px; }
-  .header h1 { font-family:'Space Mono',monospace; font-size:1.4rem; letter-spacing:4px; color:var(--accent); text-transform:uppercase; }
-  .header p { color:var(--muted); font-size:0.8rem; margin-top:4px; letter-spacing:1px; }
+/* LOGIN */
+#loginScreen { width:100%; max-width:360px; text-align:center; margin-top:80px; }
+#loginScreen h1 {
+  font-family:'Space Mono',monospace; font-size:1.4rem;
+  letter-spacing:4px; color:var(--accent); margin-bottom:4px;
+}
+#loginScreen p { color:var(--muted); font-size:0.8rem; margin-bottom:32px; }
+.login-card {
+  background:var(--card); border:1px solid var(--border);
+  border-radius:16px; padding:28px;
+}
+.login-card label {
+  display:block; text-align:left; font-family:'Space Mono',monospace;
+  font-size:0.7rem; letter-spacing:1px; color:var(--muted); margin-bottom:6px;
+}
+.login-card select,
+.login-card input[type=password] {
+  width:100%; background:var(--surface); border:1px solid var(--border);
+  border-radius:8px; padding:12px 14px; color:var(--text);
+  font-family:'Space Mono',monospace; font-size:0.9rem;
+  outline:none; margin-bottom:16px; transition:border-color 0.2s;
+  -webkit-appearance:none; appearance:none;
+}
+.login-card select:focus,
+.login-card input[type=password]:focus { border-color:var(--accent2); }
+.login-card select option { background:var(--card); }
+.btn-login {
+  width:100%; padding:14px; background:var(--accent); border:none;
+  border-radius:8px; color:#000; font-family:'Space Mono',monospace;
+  font-size:0.85rem; letter-spacing:2px; font-weight:700;
+  cursor:pointer; transition:all 0.2s;
+}
+.btn-login:hover { box-shadow:var(--glow); transform:translateY(-1px); }
+#loginErr { color:var(--red); font-size:0.8rem; margin-top:10px; min-height:18px; }
 
-  .status-bar {
-    background:var(--card); border:1px solid var(--border); border-radius:12px;
-    padding:12px 16px; display:flex; align-items:center; gap:10px;
-    margin-bottom:16px; font-size:0.85rem;
-  }
-  .status-dot { width:8px; height:8px; border-radius:50%; background:var(--muted); transition:all 0.3s; flex-shrink:0; }
-  .status-dot.active  { background:var(--accent); box-shadow:0 0 8px var(--accent); animation:pulse 1.5s infinite; }
-  .status-dot.ringing { background:#ffaa00; box-shadow:0 0 8px #ffaa00; animation:pulse 0.8s infinite; }
-  .status-dot.error   { background:var(--red); }
-  @keyframes pulse { 0%,100%{opacity:1} 50%{opacity:0.4} }
-  #statusText { color:var(--muted); font-family:'Space Mono',monospace; font-size:0.75rem; }
+/* MAIN APP */
+#mainApp { display:none; width:100%; max-width:480px; padding-bottom:40px; }
+#mainApp.show { display:block; }
 
-  .tabs { display:flex; background:var(--card); border:1px solid var(--border); border-radius:12px; padding:4px; margin-bottom:16px; }
-  .tab { flex:1; padding:10px; text-align:center; border-radius:8px; cursor:pointer; font-size:0.8rem; font-family:'Space Mono',monospace; letter-spacing:1px; color:var(--muted); transition:all 0.2s; border:none; background:none; }
-  .tab.active { background:var(--accent2); color:white; }
+/* HEADER */
+.app-header {
+  display:flex; align-items:center; justify-content:space-between;
+  padding:16px 0 10px;
+}
+.app-header h1 {
+  font-family:'Space Mono',monospace; font-size:1rem;
+  letter-spacing:3px; color:var(--accent);
+}
+.header-right { display:flex; align-items:center; gap:8px; }
+.agent-badge {
+  display:flex; align-items:center; gap:8px;
+  background:var(--card); border:1px solid var(--border);
+  border-radius:20px; padding:6px 12px; font-size:0.8rem;
+}
+.agent-dot { width:8px; height:8px; border-radius:50%; background:var(--accent); box-shadow:0 0 6px var(--accent); }
+.btn-logout {
+  background:none; border:1px solid var(--border); color:var(--muted);
+  border-radius:6px; padding:5px 10px; font-size:0.7rem; cursor:pointer;
+  font-family:'Space Mono',monospace; transition:all 0.2s;
+}
+.btn-logout:hover { border-color:var(--red); color:var(--red); }
 
-  .panel { display:none; }
-  .panel.active { display:block; }
+/* STATUS BAR */
+.status-bar {
+  background:var(--card); border:1px solid var(--border); border-radius:10px;
+  padding:10px 16px; display:flex; align-items:center; gap:10px; margin-bottom:12px;
+}
+.status-dot { width:7px; height:7px; border-radius:50%; background:var(--muted); transition:all 0.3s; flex-shrink:0; }
+.status-dot.active  { background:var(--accent);  box-shadow:0 0 6px var(--accent);  animation:pulse 1.5s infinite; }
+.status-dot.ringing { background:#ffaa00;          box-shadow:0 0 6px #ffaa00;         animation:pulse 0.8s infinite; }
+.status-dot.error   { background:var(--red); }
+@keyframes pulse { 0%,100%{opacity:1} 50%{opacity:0.4} }
+#statusText { font-family:'Space Mono',monospace; font-size:0.75rem; color:var(--muted); }
 
-  .card { background:var(--card); border:1px solid var(--border); border-radius:16px; padding:24px; margin-bottom:16px; }
+/* INCOMING BANNER */
+.incoming-banner {
+  background:linear-gradient(135deg,var(--card),rgba(124,58,237,0.2));
+  border:1px solid var(--accent2); border-radius:14px;
+  padding:20px; text-align:center; margin-bottom:12px;
+  display:none; animation:slideIn 0.3s ease;
+}
+.incoming-banner.show { display:block; }
+@keyframes slideIn { from{transform:translateY(-10px);opacity:0} to{transform:translateY(0);opacity:1} }
+.incoming-avatar {
+  width:60px; height:60px; border-radius:50%; background:var(--accent2);
+  display:flex; align-items:center; justify-content:center;
+  font-size:1.5rem; margin:0 auto 10px; animation:ring 0.8s infinite;
+}
+@keyframes ring {
+  0%,100%{ box-shadow:0 0 0 0 rgba(124,58,237,0.4); }
+  50%    { box-shadow:0 0 0 14px rgba(124,58,237,0); }
+}
+.incoming-name { font-family:'Space Mono',monospace; font-size:0.95rem; margin-bottom:2px; }
+.incoming-from { color:var(--muted); font-size:0.8rem; margin-bottom:16px; }
+.incoming-actions { display:flex; gap:14px; justify-content:center; }
+.btn-accept,.btn-reject {
+  width:54px; height:54px; border-radius:50%; border:none;
+  cursor:pointer; font-size:1.3rem; transition:all 0.2s;
+}
+.btn-accept { background:var(--accent); }
+.btn-accept:hover { transform:scale(1.1); box-shadow:var(--glow); }
+.btn-reject { background:var(--red); }
+.btn-reject:hover { transform:scale(1.1); }
 
-  .number-display { background:var(--surface); border:1px solid var(--border); border-radius:10px; padding:16px; text-align:center; margin-bottom:20px; min-height:60px; display:flex; align-items:center; justify-content:center; }
-  #dialNumber { font-family:'Space Mono',monospace; font-size:1.6rem; letter-spacing:3px; border:none; background:none; text-align:center; width:100%; outline:none; color:var(--accent); }
-  #dialNumber::placeholder { color:var(--muted); font-size:0.9rem; }
+/* TABS */
+.tabs {
+  display:flex; background:var(--card); border:1px solid var(--border);
+  border-radius:10px; padding:4px; margin-bottom:14px;
+}
+.tab {
+  flex:1; padding:10px; text-align:center; border-radius:7px; cursor:pointer;
+  font-size:0.75rem; font-family:'Space Mono',monospace; letter-spacing:1px;
+  color:var(--muted); transition:all 0.2s; border:none; background:none;
+}
+.tab.active { background:var(--accent2); color:white; }
+.panel { display:none; }
+.panel.active { display:block; }
 
-  .keypad { display:grid; grid-template-columns:repeat(3,1fr); gap:10px; margin-bottom:20px; }
-  .key { background:var(--surface); border:1px solid var(--border); border-radius:10px; padding:16px 8px; text-align:center; cursor:pointer; transition:all 0.15s; user-select:none; }
-  .key:hover  { background:var(--border); border-color:var(--accent2); }
-  .key:active { transform:scale(0.95); }
-  .key .digit  { font-family:'Space Mono',monospace; font-size:1.2rem; font-weight:700; color:var(--text); display:block; }
-  .key .letters { font-size:0.55rem; color:var(--muted); letter-spacing:2px; margin-top:2px; }
+/* CARD / FIELD */
+.card { background:var(--card); border:1px solid var(--border); border-radius:14px; padding:20px; margin-bottom:12px; }
+.lbl { font-family:'Space Mono',monospace; font-size:0.7rem; letter-spacing:1px; color:var(--muted); margin-bottom:6px; }
+.field {
+  width:100%; background:var(--surface); border:1px solid var(--border);
+  border-radius:8px; padding:11px 14px; color:var(--text);
+  font-family:'DM Sans',sans-serif; font-size:0.9rem;
+  outline:none; transition:border-color 0.2s;
+}
+.field:focus { border-color:var(--accent2); }
 
-  .call-actions { display:flex; gap:12px; }
-  .btn-call {
-    flex:1; padding:16px; border-radius:50px; border:none; cursor:pointer;
-    font-family:'Space Mono',monospace; font-size:0.8rem; letter-spacing:2px; font-weight:700;
-    transition:all 0.2s; display:flex; align-items:center; justify-content:center; gap:8px;
-  }
-  .btn-call.green { background:var(--accent); color:#000; box-shadow:var(--glow); }
-  .btn-call.green:hover { transform:translateY(-2px); box-shadow:0 0 40px rgba(0,255,136,0.3); }
-  .btn-call.red   { background:var(--red); color:white; display:none; }
-  .btn-call.red.show   { display:flex; }
-  .btn-call.green.hide { display:none; }
-  .btn-backspace { width:52px; height:52px; border-radius:50%; border:1px solid var(--border); background:var(--surface); cursor:pointer; font-size:1.2rem; color:var(--muted); transition:all 0.2s; display:flex; align-items:center; justify-content:center; }
-  .btn-backspace:hover { border-color:var(--red); color:var(--red); }
+/* AUTOCOMPLETE */
+.ac-wrap { position:relative; margin-bottom:10px; }
+.ac-list {
+  position:absolute; top:calc(100% + 4px); left:0; right:0; z-index:200;
+  background:var(--card); border:1px solid var(--accent2);
+  border-radius:10px; max-height:200px; overflow-y:auto; display:none;
+}
+.ac-list.open { display:block; }
+.ac-item { padding:10px 14px; cursor:pointer; border-bottom:1px solid var(--border); transition:background 0.15s; }
+.ac-item:last-child { border-bottom:none; }
+.ac-item:hover { background:var(--surface); }
+.ac-name { font-weight:500; font-size:0.85rem; }
+.ac-num  { color:var(--muted); font-size:0.75rem; font-family:'Space Mono',monospace; }
 
-  /* Incoming card */
-  .incoming-card {
-    background:linear-gradient(135deg,var(--card),rgba(124,58,237,0.2));
-    border:1px solid var(--accent2); border-radius:16px; padding:24px;
-    text-align:center; margin-bottom:16px; display:none; animation:slideIn 0.3s ease;
-  }
-  .incoming-card.show { display:block; }
-  @keyframes slideIn { from{transform:translateY(-20px);opacity:0} to{transform:translateY(0);opacity:1} }
-  .incoming-avatar { width:70px; height:70px; border-radius:50%; background:var(--accent2); display:flex; align-items:center; justify-content:center; font-size:1.8rem; margin:0 auto 12px; animation:ring 0.8s infinite; }
-  @keyframes ring { 0%,100%{box-shadow:0 0 0 0 rgba(124,58,237,0.4)} 50%{box-shadow:0 0 0 15px rgba(124,58,237,0)} }
-  .incoming-name { font-family:'Space Mono',monospace; font-size:1rem; color:var(--text); margin-bottom:4px; }
-  .incoming-num  { color:var(--muted); font-size:0.85rem; margin-bottom:20px; }
-  .incoming-actions { display:flex; gap:12px; justify-content:center; }
-  .btn-accept,.btn-reject { width:60px; height:60px; border-radius:50%; border:none; cursor:pointer; font-size:1.4rem; transition:all 0.2s; }
-  .btn-accept { background:var(--accent); }
-  .btn-accept:hover { transform:scale(1.1); box-shadow:var(--glow); }
-  .btn-reject { background:var(--red); }
-  .btn-reject:hover { transform:scale(1.1); }
+/* CONTACT BADGE */
+.contact-badge {
+  display:none; align-items:center; gap:10px;
+  background:rgba(0,255,136,0.06); border:1px solid rgba(0,255,136,0.25);
+  border-radius:8px; padding:10px 14px; margin-bottom:10px;
+}
+.contact-badge.show { display:flex; }
+.badge-info { flex:1; min-width:0; }
+.badge-name { font-weight:500; font-size:0.85rem; }
+.badge-num  { color:var(--muted); font-size:0.75rem; font-family:'Space Mono',monospace; }
+.btn-sms-badge {
+  background:var(--accent2); border:none; border-radius:6px; color:white;
+  padding:5px 10px; font-size:0.7rem; font-family:'Space Mono',monospace;
+  cursor:pointer; flex-shrink:0;
+}
+.btn-clear-contact { background:none; border:none; color:var(--muted); cursor:pointer; font-size:1.1rem; flex-shrink:0; }
+.btn-clear-contact:hover { color:var(--red); }
 
-  /* Active call */
-  .active-call { display:none; text-align:center; padding:20px; }
-  .active-call.show { display:block; }
-  .call-timer { font-family:'Space Mono',monospace; font-size:2rem; color:var(--accent); margin:12px 0; }
-  .call-controls { display:flex; gap:12px; justify-content:center; margin-top:20px; }
-  .ctrl-btn { width:54px; height:54px; border-radius:50%; border:1px solid var(--border); background:var(--surface); color:var(--text); font-size:1.1rem; cursor:pointer; transition:all 0.2s; display:flex; align-items:center; justify-content:center; }
-  .ctrl-btn:hover { border-color:var(--accent2); color:var(--accent2); }
-  .ctrl-btn.active-ctrl { background:var(--accent2); border-color:var(--accent2); }
+/* NUMBER DISPLAY */
+.number-display {
+  background:var(--surface); border:1px solid var(--border); border-radius:10px;
+  padding:14px; margin-bottom:16px;
+  display:flex; align-items:center; justify-content:center; min-height:56px;
+}
+#dialNumber {
+  font-family:'Space Mono',monospace; font-size:1.5rem; letter-spacing:3px;
+  border:none; background:none; text-align:center; width:100%; outline:none; color:var(--accent);
+}
+#dialNumber::placeholder { color:var(--muted); font-size:0.8rem; letter-spacing:0; }
 
-  /* Receive tab */
-  .receiver-info { text-align:center; padding:20px 0; }
-  .receiver-info .big-num { font-family:'Space Mono',monospace; font-size:1.3rem; color:var(--accent); margin-bottom:8px; }
-  .receiver-info p { color:var(--muted); font-size:0.8rem; line-height:1.6; }
-  .label { font-size:0.75rem; color:var(--muted); font-family:'Space Mono',monospace; letter-spacing:1px; margin-bottom:8px; }
-  .input-field { width:100%; background:var(--surface); border:1px solid var(--border); border-radius:8px; padding:12px 14px; color:var(--text); font-family:'Space Mono',monospace; font-size:0.9rem; outline:none; transition:border-color 0.2s; margin-bottom:12px; }
-  .input-field:focus { border-color:var(--accent2); }
-  .btn-save { width:100%; padding:12px; background:var(--accent2); border:none; border-radius:8px; color:white; font-family:'Space Mono',monospace; font-size:0.8rem; letter-spacing:2px; cursor:pointer; transition:all 0.2s; }
-  .btn-save:hover { opacity:0.85; }
+/* KEYPAD */
+.keypad { display:grid; grid-template-columns:repeat(3,1fr); gap:8px; margin-bottom:16px; }
+.key {
+  background:var(--surface); border:1px solid var(--border); border-radius:10px;
+  padding:14px 8px; text-align:center; cursor:pointer; transition:all 0.15s; user-select:none;
+}
+.key:hover  { background:var(--border); border-color:var(--accent2); }
+.key:active { transform:scale(0.95); }
+.key .d { font-family:'Space Mono',monospace; font-size:1.1rem; font-weight:700; color:var(--text); display:block; }
+.key .s { font-size:0.5rem; color:var(--muted); letter-spacing:2px; margin-top:2px; display:block; }
 
-  /* Logs */
-  .log-list { max-height:200px; overflow-y:auto; }
-  .log-item { display:flex; align-items:center; gap:12px; padding:10px 0; border-bottom:1px solid var(--border); font-size:0.82rem; }
-  .log-item:last-child { border-bottom:none; }
-  .log-num  { font-family:'Space Mono',monospace; color:var(--text); }
-  .log-time { color:var(--muted); font-size:0.7rem; margin-left:auto; }
-  .log-type { font-size:0.7rem; padding:2px 6px; border-radius:4px; }
-  .log-type.out    { background:rgba(0,255,136,0.1); color:var(--accent); }
-  .log-type.in     { background:rgba(124,58,237,0.2); color:#a78bfa; }
-  .log-type.missed { background:rgba(255,68,102,0.1); color:var(--red); }
+/* CALL ACTIONS */
+.call-actions { display:flex; gap:10px; }
+.btn-call {
+  flex:1; padding:14px; border-radius:50px; border:none; cursor:pointer;
+  font-family:'Space Mono',monospace; font-size:0.75rem; letter-spacing:2px; font-weight:700;
+  display:flex; align-items:center; justify-content:center; gap:6px; transition:all 0.2s;
+}
+.btn-call.green { background:var(--accent); color:#000; box-shadow:var(--glow); }
+.btn-call.green:hover { transform:translateY(-2px); box-shadow:0 0 40px rgba(0,255,136,0.3); }
+.btn-call.red { background:var(--red); color:white; display:none; }
+.btn-call.red.show { display:flex; }
+.btn-call.green.hide { display:none; }
+.btn-bs {
+  width:48px; height:48px; border-radius:50%; border:1px solid var(--border);
+  background:var(--surface); cursor:pointer; font-size:1rem; color:var(--muted);
+  display:flex; align-items:center; justify-content:center; transition:all 0.2s;
+}
+.btn-bs:hover { border-color:var(--red); color:var(--red); }
 
-  /* Toast */
-  .toast { position:fixed; bottom:20px; left:50%; transform:translateX(-50%) translateY(100px); background:var(--card); border:1px solid var(--border); padding:12px 20px; border-radius:8px; font-family:'Space Mono',monospace; font-size:0.75rem; transition:transform 0.3s; z-index:999; white-space:nowrap; }
-  .toast.show    { transform:translateX(-50%) translateY(0); }
-  .toast.success { border-color:var(--accent); color:var(--accent); }
-  .toast.error   { border-color:var(--red); color:var(--red); }
+/* ACTIVE CALL */
+.active-call { display:none; text-align:center; padding:10px 0 6px; }
+.active-call.show { display:block; }
+.ac-contact { font-family:'Space Mono',monospace; font-size:1rem; margin-top:8px; }
+.ac-num2    { color:var(--muted); font-size:0.8rem; margin-top:2px; }
+.call-timer { font-family:'Space Mono',monospace; font-size:2rem; color:var(--accent); margin:12px 0; }
+.call-ctrl  { display:flex; gap:10px; justify-content:center; }
+.ctrl-btn {
+  width:50px; height:50px; border-radius:50%; border:1px solid var(--border);
+  background:var(--surface); color:var(--text); font-size:1rem; cursor:pointer;
+  display:flex; align-items:center; justify-content:center; transition:all 0.2s;
+}
+.ctrl-btn:hover { border-color:var(--accent2); color:var(--accent2); }
+.ctrl-btn.on  { background:var(--accent2); border-color:var(--accent2); }
+.ctrl-btn.end { background:var(--red); border-color:var(--red); color:white; font-size:1.1rem; }
+.notes-area { margin-top:16px; text-align:left; }
+.notes-ta {
+  width:100%; background:var(--surface); border:1px solid var(--border);
+  border-radius:8px; padding:10px; color:var(--text);
+  font-family:'DM Sans',sans-serif; font-size:0.85rem;
+  resize:none; outline:none; height:70px;
+}
+.notes-ta:focus { border-color:var(--accent2); }
 
-  ::-webkit-scrollbar { width:4px; }
-  ::-webkit-scrollbar-track { background:var(--surface); }
-  ::-webkit-scrollbar-thumb { background:var(--border); border-radius:2px; }
+/* SMS */
+.sms-ta {
+  width:100%; background:var(--surface); border:1px solid var(--border);
+  border-radius:8px; padding:10px; color:var(--text);
+  font-family:'DM Sans',sans-serif; font-size:0.85rem;
+  resize:none; outline:none; height:64px; margin-bottom:8px;
+}
+.sms-ta:focus { border-color:var(--accent2); }
+.btn-send {
+  width:100%; padding:12px; background:var(--accent2); border:none;
+  border-radius:8px; color:white; font-family:'Space Mono',monospace;
+  font-size:0.8rem; letter-spacing:2px; cursor:pointer; transition:opacity 0.2s;
+}
+.btn-send:hover { opacity:0.85; }
+
+/* STATS / LOGS */
+.stats-grid { display:grid; grid-template-columns:repeat(2,1fr); gap:10px; margin-bottom:14px; }
+.stat-card { background:var(--surface); border:1px solid var(--border); border-radius:10px; padding:14px; text-align:center; }
+.stat-val  { font-family:'Space Mono',monospace; font-size:1.4rem; color:var(--accent); }
+.stat-lbl  { color:var(--muted); font-size:0.7rem; margin-top:2px; }
+.log-list  { max-height:320px; overflow-y:auto; }
+.log-item  { display:flex; align-items:center; gap:10px; padding:10px 0; border-bottom:1px solid var(--border); font-size:0.82rem; }
+.log-item:last-child { border-bottom:none; }
+.log-ico   { font-size:1rem; flex-shrink:0; }
+.log-body  { flex:1; min-width:0; }
+.log-cname { font-weight:500; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+.log-meta  { color:var(--muted); font-size:0.7rem; margin-top:1px; }
+.log-rec   { color:var(--accent2); font-size:0.68rem; text-decoration:none; display:inline-block; margin-top:2px; }
+.log-right { text-align:right; flex-shrink:0; }
+.log-type  { font-size:0.65rem; padding:2px 6px; border-radius:4px; display:inline-block; margin-bottom:2px; }
+.log-type.out    { background:rgba(0,255,136,0.1); color:var(--accent); }
+.log-type.in     { background:rgba(124,58,237,0.2); color:#a78bfa; }
+.log-type.missed { background:rgba(255,68,102,0.1); color:var(--red); }
+.log-dur   { color:var(--muted); font-size:0.7rem; font-family:'Space Mono',monospace; }
+
+/* MANAGER */
+.webhook-row {
+  background:var(--surface); border:1px solid var(--border); border-radius:8px;
+  padding:10px 14px; margin-bottom:8px; display:flex; align-items:center; gap:8px;
+}
+.webhook-url { font-family:'Space Mono',monospace; font-size:0.72rem; color:var(--accent); flex:1; word-break:break-all; }
+.btn-copy {
+  background:none; border:1px solid var(--border); color:var(--muted);
+  border-radius:4px; padding:4px 8px; font-size:0.65rem; cursor:pointer;
+  font-family:'Space Mono',monospace; flex-shrink:0; transition:all 0.2s;
+}
+.btn-copy:hover { border-color:var(--accent); color:var(--accent); }
+.live-item {
+  display:flex; align-items:center; gap:10px;
+  padding:10px 0; border-bottom:1px solid var(--border); font-size:0.82rem;
+}
+.live-item:last-child { border-bottom:none; }
+.live-dot { width:8px; height:8px; border-radius:50%; background:var(--accent); box-shadow:0 0 6px var(--accent); flex-shrink:0; }
+
+/* TOAST */
+.toast {
+  position:fixed; bottom:20px; left:50%;
+  transform:translateX(-50%) translateY(120px);
+  background:var(--card); border:1px solid var(--border);
+  padding:10px 22px; border-radius:8px;
+  font-family:'Space Mono',monospace; font-size:0.75rem;
+  transition:transform 0.3s; z-index:9999; white-space:nowrap;
+}
+.toast.show    { transform:translateX(-50%) translateY(0); }
+.toast.success { border-color:var(--accent); color:var(--accent); }
+.toast.error   { border-color:var(--red);    color:var(--red); }
+::-webkit-scrollbar { width:4px; }
+::-webkit-scrollbar-track { background:var(--surface); }
+::-webkit-scrollbar-thumb { background:var(--border); border-radius:2px; }
 </style>
 </head>
 <body>
-<div class="app">
-  <div class="header">
-    <h1>📞 TwilioCaller</h1>
-    <p>POWERED BY TWILIO</p>
+
+<!-- LOGIN -->
+<div id="loginScreen">
+  <h1>📞 CALLCENTER</h1>
+  <p>TWILIO + ODOO CRM</p>
+  <div class="login-card">
+    <label>AGENT NAME</label>
+    <select id="agentName">
+      <option value="Sachin">Sachin</option>
+      <option value="Agent2">Agent 2</option>
+      <option value="Agent3">Agent 3</option>
+    </select>
+    <label>PIN</label>
+    <input type="password" id="agentPin" placeholder="Enter PIN" maxlength="6"/>
+    <button class="btn-login" onclick="doLogin()">LOGIN →</button>
+    <div id="loginErr"></div>
+  </div>
+</div>
+
+<!-- MAIN APP -->
+<div id="mainApp">
+
+  <div class="app-header">
+    <h1>📞 CALLCENTER</h1>
+    <div class="header-right">
+      <div class="agent-badge">
+        <div class="agent-dot"></div>
+        <span id="agentLabel">Agent</span>
+      </div>
+      <button class="btn-logout" onclick="doLogout()">LOGOUT</button>
+    </div>
   </div>
 
   <div class="status-bar">
@@ -157,379 +366,574 @@
     <span id="statusText">READY</span>
   </div>
 
-  <!-- Incoming call -->
-  <div class="incoming-card" id="incomingCard">
+  <!-- INCOMING BANNER -->
+  <div class="incoming-banner" id="incomingBanner">
     <div class="incoming-avatar">📲</div>
-    <div class="incoming-name">Incoming Call</div>
-    <div class="incoming-num" id="incomingNum">Unknown</div>
+    <div class="incoming-name" id="incomingName">Incoming Call</div>
+    <div class="incoming-from" id="incomingFrom"></div>
     <div class="incoming-actions">
-      <button class="btn-accept" onclick="acceptCall()" title="Accept">📞</button>
-      <button class="btn-reject" onclick="rejectCall()" title="Reject">📵</button>
+      <button class="btn-accept" onclick="acceptCall()">📞</button>
+      <button class="btn-reject" onclick="rejectCall()">📵</button>
     </div>
   </div>
 
   <div class="tabs">
-    <button class="tab active" onclick="switchTab('dialer',this)">DIAL</button>
-    <button class="tab" onclick="switchTab('receive',this)">RECEIVE</button>
-    <button class="tab" onclick="switchTab('logs',this)">LOGS</button>
+    <button class="tab active" onclick="switchTab('dial',this)">DIAL</button>
+    <button class="tab"        onclick="switchTab('logs',this)">LOGS</button>
+    <button class="tab"        onclick="switchTab('manager',this)">MANAGER</button>
   </div>
 
-  <!-- DIALER -->
-  <div class="panel active" id="tab-dialer">
+  <!-- DIAL TAB -->
+  <div class="panel active" id="tab-dial">
     <div class="card">
+      <div class="lbl">SEARCH CONTACT (ODOO)</div>
+      <div class="ac-wrap">
+        <input class="field" type="text" id="contactSearch"
+               placeholder="Name, number or email…"
+               autocomplete="off" oninput="onSearch(this.value)"/>
+        <div class="ac-list" id="acList"></div>
+      </div>
+
+      <div class="contact-badge" id="contactBadge">
+        <div class="badge-info">
+          <div class="badge-name" id="badgeName"></div>
+          <div class="badge-num"  id="badgeNum"></div>
+        </div>
+        <button class="btn-sms-badge" onclick="focusSms()">💬 SMS</button>
+        <button class="btn-clear-contact" onclick="clearContact()">×</button>
+      </div>
+
+      <div class="number-display">
+        <input type="tel" id="dialNumber" placeholder="Enter or search number"/>
+      </div>
+
+      <!-- Active call UI -->
       <div class="active-call" id="activeCallUI">
         <div style="font-size:2rem">📞</div>
-        <div style="color:var(--muted);font-size:0.8rem;margin-top:8px">CONNECTED TO</div>
-        <div id="activeCallNum" style="font-family:'Space Mono',monospace;font-size:1.1rem;color:var(--accent);margin:4px 0"></div>
+        <div class="ac-contact" id="callContact"></div>
+        <div class="ac-num2"    id="callNum2"></div>
         <div class="call-timer" id="callTimer">00:00</div>
-        <div class="call-controls">
+        <div class="call-ctrl">
           <button class="ctrl-btn" id="muteBtn" onclick="toggleMute()">🎤</button>
-          <button class="ctrl-btn" onclick="hangUp()" style="background:var(--red);border-color:var(--red);color:white;font-size:1.2rem">📵</button>
-          <button class="ctrl-btn" onclick="showToast('Use your phone speaker','')" >🔊</button>
+          <button class="ctrl-btn end" onclick="hangUp()">📵</button>
+          <button class="ctrl-btn" onclick="toast('Use your physical phone','')">🔊</button>
+        </div>
+        <div class="notes-area">
+          <div class="lbl" style="margin-top:14px">NOTES</div>
+          <textarea class="notes-ta" id="callNotes" placeholder="Type notes during call…"></textarea>
         </div>
       </div>
 
-      <div id="normalDialerUI">
-        <div class="number-display">
-          <input type="tel" id="dialNumber" placeholder="+1 (XXX) XXX-XXXX"/>
-        </div>
+      <!-- Normal dialer -->
+      <div id="normalDialer">
         <div class="keypad">
-          <div class="key" onclick="pressKey('1')"><span class="digit">1</span><span class="letters"> </span></div>
-          <div class="key" onclick="pressKey('2')"><span class="digit">2</span><span class="letters">ABC</span></div>
-          <div class="key" onclick="pressKey('3')"><span class="digit">3</span><span class="letters">DEF</span></div>
-          <div class="key" onclick="pressKey('4')"><span class="digit">4</span><span class="letters">GHI</span></div>
-          <div class="key" onclick="pressKey('5')"><span class="digit">5</span><span class="letters">JKL</span></div>
-          <div class="key" onclick="pressKey('6')"><span class="digit">6</span><span class="letters">MNO</span></div>
-          <div class="key" onclick="pressKey('7')"><span class="digit">7</span><span class="letters">PQRS</span></div>
-          <div class="key" onclick="pressKey('8')"><span class="digit">8</span><span class="letters">TUV</span></div>
-          <div class="key" onclick="pressKey('9')"><span class="digit">9</span><span class="letters">WXYZ</span></div>
-          <div class="key" onclick="pressKey('*')"><span class="digit">*</span></div>
-          <div class="key" onclick="pressKey('0')"><span class="digit">0</span><span class="letters">+</span></div>
-          <div class="key" onclick="pressKey('#')"><span class="digit">#</span></div>
+          <div class="key" onclick="pressKey('1')"><span class="d">1</span><span class="s"> </span></div>
+          <div class="key" onclick="pressKey('2')"><span class="d">2</span><span class="s">ABC</span></div>
+          <div class="key" onclick="pressKey('3')"><span class="d">3</span><span class="s">DEF</span></div>
+          <div class="key" onclick="pressKey('4')"><span class="d">4</span><span class="s">GHI</span></div>
+          <div class="key" onclick="pressKey('5')"><span class="d">5</span><span class="s">JKL</span></div>
+          <div class="key" onclick="pressKey('6')"><span class="d">6</span><span class="s">MNO</span></div>
+          <div class="key" onclick="pressKey('7')"><span class="d">7</span><span class="s">PQRS</span></div>
+          <div class="key" onclick="pressKey('8')"><span class="d">8</span><span class="s">TUV</span></div>
+          <div class="key" onclick="pressKey('9')"><span class="d">9</span><span class="s">WXYZ</span></div>
+          <div class="key" onclick="pressKey('*')"><span class="d">*</span></div>
+          <div class="key" onclick="pressKey('0')"><span class="d">0</span><span class="s">+</span></div>
+          <div class="key" onclick="pressKey('#')"><span class="d">#</span></div>
         </div>
         <div class="call-actions">
-          <button class="btn-call green" id="callBtn" onclick="makeCall()">📞 CALL</button>
+          <button class="btn-call green" id="callBtn"   onclick="makeCall()">📞 CALL</button>
           <button class="btn-call red"   id="hangupBtn" onclick="hangUp()">📵 END</button>
-          <button class="btn-backspace"  onclick="backspace()">⌫</button>
+          <button class="btn-bs" onclick="backspace()">⌫</button>
         </div>
       </div>
     </div>
-  </div>
 
-  <!-- RECEIVE -->
-  <div class="panel" id="tab-receive">
+    <!-- SMS -->
     <div class="card">
-      <div class="receiver-info">
-        <div class="big-num">+1 929 296 1896</div>
-        <p>Your Twilio number. Calls to this number<br/>will ring your Indian phone automatically.</p>
-      </div>
-      <div style="margin-top:20px">
-        <div class="label">YOUR VERCEL WEBHOOK URL</div>
-        <input class="input-field" type="text" id="webhookUrl" readonly/>
-        <button class="btn-save" onclick="copyWebhook()">📋 COPY WEBHOOK URL</button>
-      </div>
-    </div>
-    <div class="card">
-      <div class="label" style="margin-bottom:12px">HOW IT WORKS</div>
-      <div style="color:var(--muted);font-size:0.82rem;line-height:2">
-        1️⃣ Deploy this app on Vercel<br/>
-        2️⃣ Copy the Webhook URL above<br/>
-        3️⃣ Twilio Console → +1 929 296 1896 → Voice Webhook<br/>
-        4️⃣ Paste URL → Save<br/>
-        5️⃣ Someone calls → your phone +91 rings! 📱
-      </div>
+      <div class="lbl" style="margin-bottom:10px">SEND SMS</div>
+      <div class="lbl">TO</div>
+      <input class="field" type="tel" id="smsTo" placeholder="+1 (xxx) xxx-xxxx" style="margin-bottom:10px"/>
+      <div class="lbl">MESSAGE</div>
+      <textarea class="sms-ta" id="smsMsg" placeholder="Type your message…"></textarea>
+      <button class="btn-send" onclick="sendSms()">📨 SEND SMS</button>
     </div>
   </div>
 
-  <!-- LOGS -->
+  <!-- LOGS TAB -->
   <div class="panel" id="tab-logs">
+    <div class="stats-grid">
+      <div class="stat-card"><div class="stat-val" id="statTotal">0</div><div class="stat-lbl">TOTAL CALLS</div></div>
+      <div class="stat-card"><div class="stat-val" id="statToday">0</div><div class="stat-lbl">TODAY</div></div>
+      <div class="stat-card"><div class="stat-val" id="statAvg">0:00</div><div class="stat-lbl">AVG DURATION</div></div>
+      <div class="stat-card"><div class="stat-val" id="statMissed">0</div><div class="stat-lbl">MISSED</div></div>
+    </div>
     <div class="card">
-      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:16px">
-        <div class="label" style="margin:0">CALL HISTORY</div>
-        <button onclick="clearLogs()" style="background:none;border:none;color:var(--muted);cursor:pointer;font-size:0.75rem">CLEAR</button>
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:14px">
+        <div class="lbl" style="margin:0">CALL HISTORY</div>
+        <button onclick="clearLogs()" style="background:none;border:none;color:var(--muted);cursor:pointer;font-family:'Space Mono',monospace;font-size:0.7rem">CLEAR</button>
       </div>
       <div class="log-list" id="logList">
         <div style="color:var(--muted);text-align:center;font-size:0.8rem;padding:20px">No calls yet</div>
       </div>
     </div>
   </div>
-</div>
 
-<div class="toast" id="toast"></div>
+  <!-- MANAGER TAB -->
+  <div class="panel" id="tab-manager">
+    <div class="card">
+      <div class="lbl" style="margin-bottom:10px">TWILIO WEBHOOK URLS</div>
+      <div class="lbl">INCOMING VOICE (A call comes in → Webhook)</div>
+      <div class="webhook-row">
+        <span class="webhook-url" id="whIncoming"></span>
+        <button class="btn-copy" onclick="copyEl('whIncoming')">COPY</button>
+      </div>
+      <div class="lbl">STATUS CALLBACK</div>
+      <div class="webhook-row">
+        <span class="webhook-url" id="whStatus"></span>
+        <button class="btn-copy" onclick="copyEl('whStatus')">COPY</button>
+      </div>
+    </div>
+
+    <div class="card">
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:14px">
+        <div class="lbl" style="margin:0">LIVE ACTIVE CALLS</div>
+        <button onclick="refreshManager()" style="background:none;border:none;color:var(--muted);cursor:pointer;font-family:'Space Mono',monospace;font-size:0.7rem">↻ REFRESH</button>
+      </div>
+      <div id="liveAgents">
+        <div style="color:var(--muted);font-size:0.8rem;padding:6px 0">No active calls</div>
+      </div>
+    </div>
+
+    <div class="stats-grid">
+      <div class="stat-card"><div class="stat-val" id="mgrTotal">0</div><div class="stat-lbl">TOTAL CALLS</div></div>
+      <div class="stat-card"><div class="stat-val" id="mgrToday">0</div><div class="stat-lbl">TODAY</div></div>
+      <div class="stat-card"><div class="stat-val" id="mgrAvg">0:00</div><div class="stat-lbl">AVG DURATION</div></div>
+      <div class="stat-card"><div class="stat-val" id="mgrMissed">0</div><div class="stat-lbl">MISSED</div></div>
+    </div>
+  </div>
+
+</div><!-- /mainApp -->
+
+<div class="toast" id="toastEl"></div>
 
 <script>
-// ── State ──────────────────────────────────────────────────────────────────────
-let callActive = false;
-let callInterval = null;
-let callSeconds = 0;
-let muted = false;
-let currentCallSid = null;
-let lastIncomingSid = null;
-let ringtoneInterval = null;
+// ── STATE ──────────────────────────────────────────────────────────────────────
+let agentToken = localStorage.getItem('agentToken');
+let agentName  = localStorage.getItem('agentName');
+let callActive = false, callInterval = null, callSeconds = 0;
+let muted = false, currentCallSid = null;
+let lastIncomingSid = null, ringtoneInterval = null;
+let selectedContact = null, acResults = [], acTimer = null;
 let logs = JSON.parse(localStorage.getItem('callLogs') || '[]');
 
-// ── Init ───────────────────────────────────────────────────────────────────────
+// ── BOOT ───────────────────────────────────────────────────────────────────────
 window.onload = () => {
-  document.getElementById('webhookUrl').value = window.location.origin + '/api/incoming';
-  renderLogs();
-  requestNotificationPermission();
-  startPolling();
-
-  // Keyboard support
+  if (agentToken && agentName) showApp();
+  renderLogs(); calcStats();
+  document.getElementById('agentPin').addEventListener('keydown', e => { if(e.key==='Enter') doLogin(); });
+  document.getElementById('dialNumber').addEventListener('keydown', e => { if(e.key==='Enter'&&!callActive) makeCall(); });
   document.addEventListener('keydown', e => {
+    const tag = document.activeElement.tagName;
+    if (['INPUT','TEXTAREA','SELECT'].includes(tag)) return;
     if (!callActive && '0123456789*#'.includes(e.key)) pressKey(e.key);
-    if (e.key === 'Backspace' && !callActive) backspace();
-    if (e.key === 'Enter') makeCall();
+    if (!callActive && e.key==='Backspace') backspace();
   });
+  document.addEventListener('click', e => { if (!e.target.closest('.ac-wrap')) closeAc(); });
 };
 
-// ── Tabs ───────────────────────────────────────────────────────────────────────
+// ── LOGIN ──────────────────────────────────────────────────────────────────────
+async function doLogin() {
+  const name = document.getElementById('agentName').value;
+  const pin  = document.getElementById('agentPin').value.trim();
+  document.getElementById('loginErr').textContent = '';
+  try {
+    const r = await fetch('/api/agent/login', {
+      method:'POST', headers:{'Content-Type':'application/json'},
+      body: JSON.stringify({ name, pin }),
+    });
+    const d = await r.json();
+    if (!r.ok) { document.getElementById('loginErr').textContent = d.error||'Wrong PIN'; return; }
+    agentToken = d.token; agentName = d.agent.name;
+    localStorage.setItem('agentToken', agentToken);
+    localStorage.setItem('agentName',  agentName);
+    showApp();
+  } catch(e) { document.getElementById('loginErr').textContent = 'Server error'; }
+}
+
+function showApp() {
+  document.getElementById('loginScreen').style.display = 'none';
+  document.getElementById('mainApp').classList.add('show');
+  document.getElementById('agentLabel').textContent = agentName;
+  document.getElementById('agentPin').value = '';
+  const base = window.location.origin;
+  document.getElementById('whIncoming').textContent = base + '/api/incoming';
+  document.getElementById('whStatus').textContent   = base + '/api/status';
+  if ('Notification' in window && Notification.permission==='default') Notification.requestPermission();
+  startPolling();
+  setInterval(refreshManager, 6000);
+}
+
+async function doLogout() {
+  try { await fetch('/api/agent/logout', {method:'POST',headers:{'x-agent-token':agentToken}}); } catch(e) {}
+  agentToken = null; agentName = null;
+  localStorage.removeItem('agentToken'); localStorage.removeItem('agentName');
+  document.getElementById('mainApp').classList.remove('show');
+  document.getElementById('loginScreen').style.display = '';
+}
+
+// ── TABS ───────────────────────────────────────────────────────────────────────
 function switchTab(name, el) {
   document.querySelectorAll('.panel').forEach(p => p.classList.remove('active'));
   document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
-  document.getElementById('tab-' + name).classList.add('active');
+  document.getElementById('tab-'+name).classList.add('active');
   el.classList.add('active');
+  if (name==='logs')    { renderLogs(); calcStats(); }
+  if (name==='manager') refreshManager();
 }
 
-// ── Keypad ─────────────────────────────────────────────────────────────────────
+// ── AUTOCOMPLETE ───────────────────────────────────────────────────────────────
+function onSearch(val) {
+  clearTimeout(acTimer);
+  if (!val||val.length<2) { closeAc(); return; }
+  acTimer = setTimeout(() => fetchContacts(val), 350);
+}
+async function fetchContacts(q) {
+  try {
+    const r = await fetch('/api/odoo/search?q='+encodeURIComponent(q));
+    acResults = await r.json();
+    renderAc();
+  } catch(e) { closeAc(); }
+}
+function renderAc() {
+  const list = document.getElementById('acList');
+  if (!acResults.length) { closeAc(); return; }
+  list.innerHTML = acResults.map((c,i) => `
+    <div class="ac-item" onclick="selectContact(${i})">
+      <div class="ac-name">${esc(c.name)}</div>
+      <div class="ac-num">${esc(c.mobile||c.phone||'')}</div>
+    </div>`).join('');
+  list.classList.add('open');
+}
+function closeAc() { document.getElementById('acList').classList.remove('open'); }
+
+function selectContact(i) {
+  selectedContact = acResults[i];
+  const c = selectedContact, num = c.mobile||c.phone||'';
+  closeAc();
+  document.getElementById('contactSearch').value = c.name;
+  document.getElementById('dialNumber').value    = num;
+  document.getElementById('smsTo').value         = num;
+  document.getElementById('badgeName').textContent = c.name;
+  document.getElementById('badgeNum').textContent  = num;
+  document.getElementById('contactBadge').classList.add('show');
+}
+function clearContact() {
+  selectedContact = null;
+  ['contactSearch','dialNumber','smsTo'].forEach(id => document.getElementById(id).value='');
+  document.getElementById('contactBadge').classList.remove('show');
+}
+function focusSms() {
+  document.getElementById('smsMsg').focus();
+  document.getElementById('smsMsg').scrollIntoView({behavior:'smooth'});
+}
+
+// ── KEYPAD ─────────────────────────────────────────────────────────────────────
 function pressKey(k) {
+  if (callActive) return;
   document.getElementById('dialNumber').value += k;
-  playTone(800);
+  beep(800);
 }
 function backspace() {
+  if (callActive) return;
   const el = document.getElementById('dialNumber');
-  el.value = el.value.slice(0, -1);
+  el.value = el.value.slice(0,-1);
 }
-function playTone(freq) {
+function beep(freq) {
   try {
-    const ctx = new (window.AudioContext || window.webkitAudioContext)();
+    const ctx = new (window.AudioContext||window.webkitAudioContext)();
     const o = ctx.createOscillator(), g = ctx.createGain();
     o.connect(g); g.connect(ctx.destination);
     o.frequency.value = freq; g.gain.value = 0.05;
-    o.start(); o.stop(ctx.currentTime + 0.06);
+    o.start(); o.stop(ctx.currentTime+0.06);
   } catch(e) {}
 }
 
-// ── Status ─────────────────────────────────────────────────────────────────────
-function setStatus(text, type) {
+// ── STATUS ─────────────────────────────────────────────────────────────────────
+function setStatus(text, cls) {
   document.getElementById('statusText').textContent = text;
-  const dot = document.getElementById('statusDot');
-  dot.className = 'status-dot' + (type ? ' ' + type : '');
+  document.getElementById('statusDot').className   = 'status-dot'+(cls?' '+cls:'');
 }
 
-// ── Make call ──────────────────────────────────────────────────────────────────
+// ── MAKE CALL ──────────────────────────────────────────────────────────────────
 async function makeCall() {
-  const number = document.getElementById('dialNumber').value.trim();
-  if (!number) { showToast('Enter a number first', 'error'); return; }
-
-  setStatus('CALLING ' + number + '...', 'ringing');
+  const num = document.getElementById('dialNumber').value.trim();
+  if (!num) { toast('Enter a number first','error'); return; }
+  setStatus('CALLING '+num+'…','ringing');
   document.getElementById('callBtn').classList.add('hide');
   document.getElementById('hangupBtn').classList.add('show');
-
   try {
-    const res  = await fetch('/api/call', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ to: number })
+    const r = await fetch('/api/call', {
+      method:'POST',
+      headers:{'Content-Type':'application/json','x-agent-token':agentToken},
+      body: JSON.stringify({
+        to: num,
+        odooPartnerId:   selectedContact?.id   ?? null,
+        odooPartnerName: selectedContact?.name ?? null,
+      }),
     });
-    const data = await res.json();
-
-    if (data.success) {
-      currentCallSid = data.callSid;
-      startCallUI(number, 'out');
-      showToast('Calling... pick up your phone! 📱', 'success');
+    if (r.status===401) { doLogout(); return; }
+    const d = await r.json();
+    if (d.success) {
+      currentCallSid = d.callSid;
+      startCallUI(selectedContact?.name||num, num, 'out');
+      toast('Calling… pick up your phone! 📱','success');
     } else {
       resetCallUI();
-      showToast(data.error || 'Call failed', 'error');
-      setStatus('FAILED', 'error');
+      toast(d.error||'Call failed','error');
+      setStatus('FAILED','error');
     }
-  } catch(e) {
-    resetCallUI();
-    showToast('Server error — is app deployed?', 'error');
-    setStatus('ERROR', 'error');
-  }
+  } catch(e) { resetCallUI(); toast('Server error','error'); setStatus('ERROR','error'); }
 }
 
-// ── Hang up ────────────────────────────────────────────────────────────────────
+// ── HANG UP ────────────────────────────────────────────────────────────────────
 async function hangUp() {
+  const notes = document.getElementById('callNotes').value.trim();
+  if (currentCallSid && notes) {
+    fetch('/api/call/notes',{
+      method:'POST', headers:{'Content-Type':'application/json'},
+      body: JSON.stringify({callSid:currentCallSid, notes}),
+    }).catch(()=>{});
+  }
   if (currentCallSid) {
-    try {
-      await fetch('/api/hangup', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ callSid: currentCallSid })
-      });
-    } catch(e) {}
+    fetch('/api/hangup',{
+      method:'POST', headers:{'Content-Type':'application/json'},
+      body: JSON.stringify({callSid:currentCallSid}),
+    }).catch(()=>{});
   }
   updateLastLog('ended');
   resetCallUI();
-  showToast('Call ended', '');
+  toast('Call ended','');
 }
 
-// ── Call UI ────────────────────────────────────────────────────────────────────
-function startCallUI(number, type) {
-  callActive = true; callSeconds = 0;
-  document.getElementById('normalDialerUI').style.display = 'none';
+// ── CALL UI ────────────────────────────────────────────────────────────────────
+function startCallUI(displayName, number, type) {
+  callActive=true; callSeconds=0;
+  document.getElementById('normalDialer').style.display='none';
   document.getElementById('activeCallUI').classList.add('show');
-  document.getElementById('activeCallNum').textContent = number;
-  setStatus('ON CALL', 'active');
+  document.getElementById('callContact').textContent = displayName;
+  document.getElementById('callNum2').textContent    = number!==displayName ? number : '';
+  document.getElementById('callNotes').value         = '';
+  setStatus('ON CALL — '+displayName,'active');
   callInterval = setInterval(() => {
     callSeconds++;
-    const m = String(Math.floor(callSeconds / 60)).padStart(2, '0');
-    const s = String(callSeconds % 60).padStart(2, '0');
-    document.getElementById('callTimer').textContent = m + ':' + s;
+    const m=String(Math.floor(callSeconds/60)).padStart(2,'0');
+    const s=String(callSeconds%60).padStart(2,'0');
+    document.getElementById('callTimer').textContent = m+':'+s;
   }, 1000);
-  addLog(number, type, 'active');
+  addLog(displayName, number, type, 'active');
 }
-
 function resetCallUI() {
-  callActive = false;
-  clearInterval(callInterval);
-  currentCallSid = null; muted = false;
-  document.getElementById('normalDialerUI').style.display = 'block';
+  callActive=false; clearInterval(callInterval);
+  currentCallSid=null; muted=false;
+  document.getElementById('normalDialer').style.display='block';
   document.getElementById('activeCallUI').classList.remove('show');
   document.getElementById('callBtn').classList.remove('hide');
   document.getElementById('hangupBtn').classList.remove('show');
-  document.getElementById('muteBtn').textContent = '🎤';
-  document.getElementById('muteBtn').classList.remove('active-ctrl');
-  setStatus('READY', '');
+  document.getElementById('muteBtn').textContent='🎤';
+  document.getElementById('muteBtn').classList.remove('on');
+  document.getElementById('callTimer').textContent='00:00';
+  setStatus('READY','');
 }
-
 function toggleMute() {
-  muted = !muted;
-  document.getElementById('muteBtn').classList.toggle('active-ctrl', muted);
-  document.getElementById('muteBtn').textContent = muted ? '🔇' : '🎤';
-  showToast(muted ? 'Muted' : 'Unmuted', '');
+  muted=!muted;
+  document.getElementById('muteBtn').classList.toggle('on',muted);
+  document.getElementById('muteBtn').textContent=muted?'🔇':'🎤';
+  toast(muted?'Muted':'Unmuted','');
 }
 
-// ── Ringtone ───────────────────────────────────────────────────────────────────
+// ── RINGTONE ───────────────────────────────────────────────────────────────────
 function startRingtone() {
   stopRingtone();
-  function beep() {
+  function chime() {
     try {
-      const ctx = new (window.AudioContext || window.webkitAudioContext)();
-      [0, 0.25].forEach(t => {
-        const o = ctx.createOscillator(), g = ctx.createGain();
+      const ctx=new(window.AudioContext||window.webkitAudioContext)();
+      [0,0.25].forEach(t=>{
+        const o=ctx.createOscillator(),g=ctx.createGain();
         o.connect(g); g.connect(ctx.destination);
-        o.frequency.value = 480;
-        g.gain.setValueAtTime(0.3, ctx.currentTime + t);
-        g.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + t + 0.2);
-        o.start(ctx.currentTime + t);
-        o.stop(ctx.currentTime + t + 0.2);
+        o.frequency.value=480;
+        g.gain.setValueAtTime(0.3,ctx.currentTime+t);
+        g.gain.exponentialRampToValueAtTime(0.001,ctx.currentTime+t+0.2);
+        o.start(ctx.currentTime+t); o.stop(ctx.currentTime+t+0.2);
       });
     } catch(e) {}
   }
-  beep();
-  ringtoneInterval = setInterval(beep, 2500);
+  chime(); ringtoneInterval=setInterval(chime,2500);
 }
 function stopRingtone() {
-  if (ringtoneInterval) { clearInterval(ringtoneInterval); ringtoneInterval = null; }
+  if (ringtoneInterval) { clearInterval(ringtoneInterval); ringtoneInterval=null; }
 }
 
-// ── Polling for incoming calls ─────────────────────────────────────────────────
+// ── POLL INCOMING ──────────────────────────────────────────────────────────────
 function startPolling() {
   setInterval(async () => {
     try {
-      const res  = await fetch('/api/status');
-      const data = await res.json();
-      if (data.incomingCall && !callActive) {
-        if (data.incomingCall.sid !== lastIncomingSid) {
-          lastIncomingSid = data.incomingCall.sid;
-          showIncoming(data.incomingCall.from);
+      const r=await fetch('/api/status'), d=await r.json();
+      const banner=document.getElementById('incomingBanner');
+      if (d.incomingCall && !callActive) {
+        if (d.incomingCall.sid!==lastIncomingSid) {
+          lastIncomingSid=d.incomingCall.sid;
+          showIncoming(d.incomingCall.from);
         }
-      } else if (!data.incomingCall) {
-        lastIncomingSid = null;
-        const card = document.getElementById('incomingCard');
-        if (card.classList.contains('show') && !callActive) {
-          card.classList.remove('show');
-          stopRingtone();
-          setStatus('READY', '');
+      } else if (!d.incomingCall) {
+        lastIncomingSid=null;
+        if (banner.classList.contains('show')&&!callActive) {
+          banner.classList.remove('show'); stopRingtone(); setStatus('READY','');
         }
       }
     } catch(e) {}
   }, 2000);
 }
-
-function showIncoming(from) {
-  document.getElementById('incomingNum').textContent = from;
-  document.getElementById('incomingCard').classList.add('show');
-  setStatus('INCOMING CALL', 'ringing');
+async function showIncoming(from) {
+  let name='Incoming Call';
+  try {
+    const r=await fetch('/api/odoo/contact?phone='+encodeURIComponent(from));
+    const p=await r.json();
+    if (p?.name) name=p.name;
+  } catch(e) {}
+  document.getElementById('incomingName').textContent=name;
+  document.getElementById('incomingFrom').textContent=from;
+  document.getElementById('incomingBanner').classList.add('show');
+  setStatus('INCOMING CALL','ringing');
   startRingtone();
   if (navigator.vibrate) navigator.vibrate([800,400,800,400,800]);
-  if (Notification.permission === 'granted') {
-    new Notification('📞 Incoming Call', { body: 'From: ' + from });
-  }
+  if (Notification.permission==='granted') new Notification('📞 Incoming Call',{body:'From: '+from});
 }
-
 function acceptCall() {
-  document.getElementById('incomingCard').classList.remove('show');
+  document.getElementById('incomingBanner').classList.remove('show');
   stopRingtone();
-  const num = document.getElementById('incomingNum').textContent;
-  startCallUI(num, 'in');
-  showToast('Connected — pick up your phone! 📱', 'success');
+  const from=document.getElementById('incomingFrom').textContent;
+  const name=document.getElementById('incomingName').textContent;
+  startCallUI(name==='Incoming Call'?from:name, from, 'in');
+  toast('Connected — pick up your phone! 📱','success');
 }
-
 function rejectCall() {
-  document.getElementById('incomingCard').classList.remove('show');
+  document.getElementById('incomingBanner').classList.remove('show');
   stopRingtone();
-  addLog(document.getElementById('incomingNum').textContent, 'missed', 'missed');
-  lastIncomingSid = null;
-  setStatus('READY', '');
-  showToast('Call rejected', '');
+  const from=document.getElementById('incomingFrom').textContent;
+  addLog(from, from, 'missed', 'missed');
+  lastIncomingSid=null; setStatus('READY','');
+  toast('Call rejected','');
 }
 
-// ── Notifications ──────────────────────────────────────────────────────────────
-function requestNotificationPermission() {
-  if ('Notification' in window && Notification.permission === 'default') {
-    Notification.requestPermission();
-  }
+// ── SMS ────────────────────────────────────────────────────────────────────────
+async function sendSms() {
+  const to=document.getElementById('smsTo').value.trim();
+  const msg=document.getElementById('smsMsg').value.trim();
+  if (!to||!msg) { toast('Enter number and message','error'); return; }
+  try {
+    const r=await fetch('/api/sms',{
+      method:'POST',
+      headers:{'Content-Type':'application/json','x-agent-token':agentToken},
+      body: JSON.stringify({to, message:msg}),
+    });
+    const d=await r.json();
+    if (d.success) { document.getElementById('smsMsg').value=''; toast('SMS sent ✓','success'); }
+    else toast(d.error||'SMS failed','error');
+  } catch(e) { toast('Server error','error'); }
 }
 
-// ── Webhook copy ───────────────────────────────────────────────────────────────
-function copyWebhook() {
-  const url = document.getElementById('webhookUrl').value;
-  navigator.clipboard.writeText(url)
-    .then(() => showToast('Webhook URL copied! ✓', 'success'))
-    .catch(() => showToast('Copy manually: ' + url, ''));
-}
-
-// ── Call logs ──────────────────────────────────────────────────────────────────
-function addLog(number, type, status) {
-  const now = new Date();
-  logs.unshift({ number, type, status, time: now.toLocaleTimeString([], {hour:'2-digit',minute:'2-digit'}), date: now.toLocaleDateString() });
-  if (logs.length > 50) logs.pop();
-  localStorage.setItem('callLogs', JSON.stringify(logs));
-  renderLogs();
+// ── LOGS ───────────────────────────────────────────────────────────────────────
+function addLog(name, number, type, status) {
+  const now=new Date();
+  logs.unshift({ name, number, type, status, agent:agentName,
+    time:now.toLocaleTimeString([],{hour:'2-digit',minute:'2-digit'}),
+    date:now.toLocaleDateString(), duration:null, recordingUrl:null });
+  if (logs.length>100) logs.pop();
+  localStorage.setItem('callLogs',JSON.stringify(logs));
+  renderLogs(); calcStats();
 }
 function updateLastLog(status) {
-  if (logs.length > 0) {
-    logs[0].status   = status;
-    logs[0].duration = document.getElementById('callTimer').textContent;
-    localStorage.setItem('callLogs', JSON.stringify(logs));
-    renderLogs();
-  }
+  if (!logs.length) return;
+  logs[0].status=status;
+  logs[0].duration=document.getElementById('callTimer').textContent;
+  localStorage.setItem('callLogs',JSON.stringify(logs));
+  renderLogs(); calcStats();
 }
 function renderLogs() {
-  const el = document.getElementById('logList');
-  if (!logs.length) { el.innerHTML = '<div style="color:var(--muted);text-align:center;font-size:0.8rem;padding:20px">No calls yet</div>'; return; }
-  el.innerHTML = logs.map(l => `
-    <div class="log-item">
-      <span>${l.type==='out'?'📤':l.type==='missed'?'📵':'📥'}</span>
-      <div>
-        <div class="log-num">${l.number}</div>
-        <div style="color:var(--muted);font-size:0.7rem">${l.date} ${l.time}${l.duration?' · '+l.duration:''}</div>
+  const el=document.getElementById('logList');
+  if (!logs.length) { el.innerHTML='<div style="color:var(--muted);text-align:center;font-size:0.8rem;padding:20px">No calls yet</div>'; return; }
+  el.innerHTML=logs.map(l => {
+    const icon=l.type==='out'?'📤':l.type==='missed'?'📵':'📥';
+    const rec=l.recordingUrl?`<a class="log-rec" href="${l.recordingUrl}" target="_blank">🎙️ Recording</a>`:'';
+    return `<div class="log-item">
+      <div class="log-ico">${icon}</div>
+      <div class="log-body">
+        <div class="log-cname">${esc(l.name||l.number)}</div>
+        <div class="log-meta">${esc(l.date)} ${esc(l.time)} · ${esc(l.agent||'')}</div>
+        ${rec}
       </div>
-      <span class="log-type ${l.type==='missed'?'missed':l.type==='out'?'out':'in'}">${l.type.toUpperCase()}</span>
-    </div>`).join('');
+      <div class="log-right">
+        <span class="log-type ${l.type==='missed'?'missed':l.type==='out'?'out':'in'}">${l.type.toUpperCase()}</span>
+        <div class="log-dur">${l.duration||'--'}</div>
+      </div>
+    </div>`;
+  }).join('');
 }
-function clearLogs() { logs=[]; localStorage.removeItem('callLogs'); renderLogs(); }
+function calcStats() {
+  const total=logs.length;
+  const today=logs.filter(l=>l.date===new Date().toLocaleDateString()).length;
+  const missed=logs.filter(l=>l.type==='missed').length;
+  const secs=logs.filter(l=>l.duration&&l.duration!=='--').map(l=>{
+    const[m,s]=l.duration.split(':').map(Number); return m*60+s;
+  });
+  const avg=secs.length?Math.round(secs.reduce((a,b)=>a+b,0)/secs.length):0;
+  const avgFmt=`${Math.floor(avg/60)}:${String(avg%60).padStart(2,'0')}`;
+  document.getElementById('statTotal').textContent=total;
+  document.getElementById('statToday').textContent=today;
+  document.getElementById('statAvg').textContent=avgFmt;
+  document.getElementById('statMissed').textContent=missed;
+  document.getElementById('mgrTotal').textContent=total;
+  document.getElementById('mgrToday').textContent=today;
+  document.getElementById('mgrAvg').textContent=avgFmt;
+  document.getElementById('mgrMissed').textContent=missed;
+}
+function clearLogs() { logs=[]; localStorage.removeItem('callLogs'); renderLogs(); calcStats(); }
 
-// ── Toast ──────────────────────────────────────────────────────────────────────
-function showToast(msg, type) {
-  const t = document.getElementById('toast');
-  t.textContent = msg;
-  t.className = 'toast show' + (type ? ' ' + type : '');
-  setTimeout(() => t.classList.remove('show'), 2800);
+// ── MANAGER ────────────────────────────────────────────────────────────────────
+async function refreshManager() {
+  try {
+    const r=await fetch('/api/manager/calls'), calls=await r.json();
+    const el=document.getElementById('liveAgents'), keys=Object.keys(calls);
+    if (!keys.length) { el.innerHTML='<div style="color:var(--muted);font-size:0.8rem;padding:6px 0">No active calls</div>'; return; }
+    el.innerHTML=keys.map(sid=>{
+      const c=calls[sid];
+      const elapsed=Math.round((Date.now()-c.startTime)/1000);
+      const dur=`${Math.floor(elapsed/60)}:${String(elapsed%60).padStart(2,'0')}`;
+      return `<div class="live-item">
+        <div class="live-dot"></div>
+        <div style="flex:1">
+          <div style="font-weight:500">${esc(c.agent)}</div>
+          <div style="color:var(--muted);font-size:0.75rem">${c.direction==='out'?'→':'←'} ${esc(c.to)}</div>
+        </div>
+        <div style="font-family:'Space Mono',monospace;font-size:0.8rem;color:var(--accent)">${dur}</div>
+      </div>`;
+    }).join('');
+  } catch(e) {}
+  calcStats();
+}
+
+// ── UTILS ──────────────────────────────────────────────────────────────────────
+function copyEl(id) {
+  const text=document.getElementById(id).textContent;
+  navigator.clipboard.writeText(text).then(()=>toast('Copied!','success')).catch(()=>toast(text,''));
+}
+function toast(msg, type) {
+  const el=document.getElementById('toastEl');
+  el.textContent=msg; el.className='toast show'+(type?' '+type:'');
+  clearTimeout(toast._t); toast._t=setTimeout(()=>el.classList.remove('show'),2800);
+}
+function esc(s) {
+  return String(s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
 }
 </script>
 </body>

@@ -1,108 +1,373 @@
 const express = require('express');
-const twilio = require('twilio');
-const path = require('path');
+const twilio  = require('twilio');
+const path    = require('path');
+const xmlrpc  = require('xmlrpc');
+const crypto  = require('crypto');
 
 const app = express();
 app.use(express.json());
 app.use(express.urlencoded({ extended: false }));
 app.use(express.static(path.join(__dirname, 'public')));
 
-const accountSid = process.env.TWILIO_ACCOUNT_SID;
-const authToken  = process.env.TWILIO_AUTH_TOKEN;
-const myPhone    = process.env.MY_PHONE_NUMBER;   // your Indian number
-const twilioNum  = process.env.TWILIO_NUMBER;     // +19292961896
+// ── ENV ───────────────────────────────────────────────────────────────────────
+const {
+  TWILIO_ACCOUNT_SID, TWILIO_AUTH_TOKEN,
+  TWILIO_NUMBER,      MY_PHONE_NUMBER,
+  AGENT2_PHONE,       AGENT3_PHONE,
+  ODOO_URL,           ODOO_DB,
+  ODOO_USER,          ODOO_PASS
+} = process.env;
 
-// In-memory call state (resets on restart — fine for demo)
-let incomingCall = null;
+const getBaseUrl = (req) =>
+  process.env.BASE_URL || `https://${req.get('host')}`;
 
-// ── 1. Make outbound call ─────────────────────────────────────────────────────
+// ── AGENTS ────────────────────────────────────────────────────────────────────
+const AGENTS = [
+  { name: 'Sachin', pin: '1234', phone: MY_PHONE_NUMBER  },
+  { name: 'Agent2', pin: '5678', phone: AGENT2_PHONE     },
+  { name: 'Agent3', pin: '9012', phone: AGENT3_PHONE     },
+];
+
+// ── IN-MEMORY STATE ───────────────────────────────────────────────────────────
+const sessions    = {};   // token → { name, phone }
+const activeCalls = {};   // callSid → call info
+let   incomingCall = null;
+
+// ── AGENT AUTH ────────────────────────────────────────────────────────────────
+app.post('/api/agent/login', (req, res) => {
+  const { name, pin } = req.body;
+  const agent = AGENTS.find(a => a.name === name && a.pin === pin);
+  if (!agent) return res.status(401).json({ error: 'Invalid credentials' });
+  const token = crypto.randomBytes(16).toString('hex');
+  sessions[token] = { name: agent.name, phone: agent.phone || MY_PHONE_NUMBER };
+  res.json({ token, agent: { name: agent.name, phone: sessions[token].phone } });
+});
+
+app.post('/api/agent/logout', (req, res) => {
+  delete sessions[req.headers['x-agent-token']];
+  res.json({ success: true });
+});
+
+function getAgent(req) {
+  return sessions[req.headers['x-agent-token']] || null;
+}
+
+// ── ODOO ──────────────────────────────────────────────────────────────────────
+function makeOdooClients() {
+  if (!ODOO_URL) return null;
+  try {
+    const u    = new URL(ODOO_URL);
+    const opts = { host: u.hostname, port: 443 };
+    return {
+      common: xmlrpc.createSecureClient({ ...opts, path: '/xmlrpc/2/common' }),
+      object: xmlrpc.createSecureClient({ ...opts, path: '/xmlrpc/2/object' }),
+    };
+  } catch(e) { return null; }
+}
+
+function rpc(client, method, params) {
+  return new Promise((resolve, reject) =>
+    client.methodCall(method, params, (err, val) => err ? reject(err) : resolve(val))
+  );
+}
+
+async function odooUid() {
+  const c = makeOdooClients();
+  if (!c) return null;
+  try {
+    const uid = await rpc(c.common, 'authenticate', [ODOO_DB, ODOO_USER, ODOO_PASS, {}]);
+    return uid ? { uid, c } : null;
+  } catch(e) { return null; }
+}
+
+async function findPartner(phone) {
+  if (!ODOO_URL || !phone) return null;
+  try {
+    const auth = await odooUid();
+    if (!auth) return null;
+    const { uid, c } = auth;
+    const clean = phone.replace(/\D/g, '').slice(-10);
+    for (const field of ['mobile', 'phone']) {
+      const rows = await rpc(c.object, 'execute_kw', [
+        ODOO_DB, uid, ODOO_PASS, 'res.partner', 'search_read',
+        [[[ field, 'like', clean ]]],
+        { fields: ['id','name','mobile','phone','email'], limit: 1 },
+      ]);
+      if (rows.length) return rows[0];
+    }
+    return null;
+  } catch(e) { return null; }
+}
+
+async function logCallToOdoo(info) {
+  if (!ODOO_URL) return;
+  try {
+    const auth = await odooUid();
+    if (!auth) return;
+    const { uid, c } = auth;
+
+    let partnerId = info.odooPartnerId || null;
+    if (!partnerId) {
+      const p = await findPartner(info.to);
+      if (p) partnerId = p.id;
+    }
+    if (!partnerId) return;
+
+    const dir = info.direction === 'out' ? 'Outbound' : 'Inbound';
+    const rec = info.recordingUrl
+      ? `<br/>🎙️ <a href="${info.recordingUrl}">Play Recording</a>` : '';
+    const notes = info.notes
+      ? `<br/>📝 Notes: ${info.notes}` : '';
+
+    const body = `📞 <b>${dir} Call</b><br/>
+Agent: ${info.agent}<br/>
+Number: ${info.to}<br/>
+Duration: ${info.duration || '0:00'}<br/>
+Status: ${info.status}${rec}${notes}`;
+
+    await rpc(c.object, 'execute_kw', [
+      ODOO_DB, uid, ODOO_PASS, 'res.partner', 'message_post',
+      [[partnerId]],
+      { body, message_type: 'comment', subtype_xmlid: 'mail.mt_note' },
+    ]);
+
+    // also post on crm.lead if one exists
+    try {
+      const leads = await rpc(c.object, 'execute_kw', [
+        ODOO_DB, uid, ODOO_PASS, 'crm.lead', 'search_read',
+        [[['partner_id','=',partnerId],['active','=',true]]],
+        { fields: ['id'], limit: 1 },
+      ]);
+      if (leads.length) {
+        await rpc(c.object, 'execute_kw', [
+          ODOO_DB, uid, ODOO_PASS, 'crm.lead', 'message_post',
+          [[leads[0].id]],
+          { body, message_type: 'comment', subtype_xmlid: 'mail.mt_note' },
+        ]);
+      }
+    } catch(e) {}
+  } catch(e) { console.error('Odoo log error:', e.message); }
+}
+
+// ── OUTBOUND CALL ─────────────────────────────────────────────────────────────
 app.post('/api/call', async (req, res) => {
-  const { to } = req.body;
-  if (!to) return res.status(400).json({ error: 'Missing "to" number' });
+  const agent = getAgent(req);
+  if (!agent) return res.status(401).json({ error: 'Not logged in' });
+
+  const { to, odooPartnerId, odooPartnerName } = req.body;
+  if (!to) return res.status(400).json({ error: 'Missing "to"' });
+
+  const agentPhone = agent.phone || MY_PHONE_NUMBER;
+  const base       = getBaseUrl(req);
 
   try {
-    const client = twilio(accountSid, authToken);
+    const client = twilio(TWILIO_ACCOUNT_SID, TWILIO_AUTH_TOKEN);
+
+    // Call the agent's physical phone first.
+    // When they pick up the TwiML dials the target number.
     const call = await client.calls.create({
-      to,
-      from: twilioNum,
-      statusCallback: `${req.protocol}://${req.get('host')}/api/status`,
-      statusCallbackMethod: 'POST',
+      to:   agentPhone,
+      from: TWILIO_NUMBER,
+      statusCallback:      `${base}/api/status`,
+      statusCallbackMethod:'POST',
       statusCallbackEvent: ['initiated','ringing','answered','completed'],
       twiml: `<?xml version="1.0" encoding="UTF-8"?>
 <Response>
-  <Say voice="alice">Connecting your call, please wait.</Say>
-  <Dial callerId="${twilioNum}" timeout="30">
-    <Number>${myPhone}</Number>
+  <Say voice="alice">Connecting your call. Please wait.</Say>
+  <Dial callerId="${TWILIO_NUMBER}"
+        record="record-from-ringing"
+        recordingStatusCallback="${base}/api/recording"
+        recordingStatusCallbackMethod="POST"
+        action="${base}/api/dial-done"
+        method="POST"
+        timeout="30">
+    <Number statusCallbackEvent="initiated ringing answered completed"
+            statusCallback="${base}/api/status"
+            statusCallbackMethod="POST">${to}</Number>
   </Dial>
-</Response>`
+</Response>`,
     });
+
+    activeCalls[call.sid] = {
+      callSid: call.sid,
+      agent:   agent.name,
+      agentPhone,
+      to,
+      direction:       'out',
+      startTime:       Date.now(),
+      status:          'initiated',
+      recordingUrl:    null,
+      notes:           '',
+      odooPartnerId:   odooPartnerId   || null,
+      odooPartnerName: odooPartnerName || null,
+    };
+
     res.json({ success: true, callSid: call.sid, status: call.status });
-  } catch (err) {
+  } catch(err) {
     console.error('Call error:', err.message);
     res.status(500).json({ success: false, error: err.message });
   }
 });
 
-// ── 2. Hang up a call ─────────────────────────────────────────────────────────
+// ── HANGUP ────────────────────────────────────────────────────────────────────
 app.post('/api/hangup', async (req, res) => {
   const { callSid } = req.body;
   if (!callSid) return res.status(400).json({ error: 'Missing callSid' });
   try {
-    const client = twilio(accountSid, authToken);
-    await client.calls(callSid).update({ status: 'completed' });
+    await twilio(TWILIO_ACCOUNT_SID, TWILIO_AUTH_TOKEN)
+      .calls(callSid).update({ status: 'completed' });
     res.json({ success: true });
-  } catch (err) {
+  } catch(err) {
     res.status(500).json({ success: false, error: err.message });
   }
 });
 
-// ── 3. Incoming call webhook (Twilio calls this) ──────────────────────────────
+// ── CALL NOTES ────────────────────────────────────────────────────────────────
+app.post('/api/call/notes', (req, res) => {
+  const { callSid, notes } = req.body;
+  if (callSid && activeCalls[callSid]) activeCalls[callSid].notes = notes;
+  res.json({ success: true });
+});
+
+// ── INBOUND WEBHOOK ───────────────────────────────────────────────────────────
 app.post('/api/incoming', (req, res) => {
   const from    = req.body.From    || 'Unknown';
   const callSid = req.body.CallSid || '';
+  const base    = getBaseUrl(req);
 
-  // Save for frontend polling
   incomingCall = { from, sid: callSid, time: Date.now() };
-
-  // Forward to your Indian phone
-  const twiml = `<?xml version="1.0" encoding="UTF-8"?>
-<Response>
-  <Say voice="alice">Please wait, connecting your call.</Say>
-  <Dial callerId="${twilioNum}" timeout="30"
-        action="/api/dial-done" method="POST">
-    <Number statusCallbackEvent="initiated ringing answered completed"
-            statusCallback="/api/status">${myPhone}</Number>
-  </Dial>
-</Response>`;
+  activeCalls[callSid] = {
+    callSid, agent: 'Incoming', agentPhone: MY_PHONE_NUMBER,
+    to: from, direction: 'in', startTime: Date.now(),
+    status: 'ringing', recordingUrl: null, notes: '',
+    odooPartnerId: null, odooPartnerName: null,
+  };
 
   res.setHeader('Content-Type', 'text/xml');
-  res.send(twiml);
+  res.send(`<?xml version="1.0" encoding="UTF-8"?>
+<Response>
+  <Say voice="alice">Please wait, connecting your call.</Say>
+  <Dial callerId="${TWILIO_NUMBER}"
+        record="record-from-ringing"
+        recordingStatusCallback="${base}/api/recording"
+        recordingStatusCallbackMethod="POST"
+        action="${base}/api/dial-done"
+        method="POST"
+        timeout="30">
+    <Number statusCallbackEvent="initiated ringing answered completed"
+            statusCallback="${base}/api/status"
+            statusCallbackMethod="POST">${MY_PHONE_NUMBER}</Number>
+  </Dial>
+</Response>`);
 });
 
-// ── 4. After dial completes ───────────────────────────────────────────────────
+// ── DIAL DONE ─────────────────────────────────────────────────────────────────
 app.post('/api/dial-done', (req, res) => {
   incomingCall = null;
   res.setHeader('Content-Type', 'text/xml');
   res.send('<Response></Response>');
 });
 
-// ── 5. Call status updates (Twilio posts here) + frontend polls GET ───────────
-app.post('/api/status', (req, res) => {
-  const { CallStatus, From, CallSid } = req.body;
-  if (['ringing','initiated'].includes(CallStatus) && From) {
+// ── RECORDING WEBHOOK ─────────────────────────────────────────────────────────
+app.post('/api/recording', (req, res) => {
+  const { CallSid, RecordingUrl } = req.body;
+  if (CallSid && activeCalls[CallSid] && RecordingUrl) {
+    activeCalls[CallSid].recordingUrl = RecordingUrl + '.mp3';
+  }
+  res.sendStatus(200);
+});
+
+// ── STATUS WEBHOOK (Twilio POST) + FRONTEND POLL (GET) ───────────────────────
+app.post('/api/status', async (req, res) => {
+  const { CallStatus, From, CallSid, CallDuration } = req.body;
+
+  if (['ringing','initiated'].includes(CallStatus) && From && !activeCalls[CallSid]) {
     incomingCall = { from: From, sid: CallSid, time: Date.now() };
-  } else if (['completed','busy','failed','no-answer','canceled'].includes(CallStatus)) {
-    incomingCall = null;
+  }
+
+  if (['completed','busy','failed','no-answer','canceled'].includes(CallStatus)) {
+    if (incomingCall && incomingCall.sid === CallSid) incomingCall = null;
+
+    const info = activeCalls[CallSid];
+    if (info) {
+      const secs = parseInt(CallDuration || 0);
+      info.duration = `${Math.floor(secs/60)}:${String(secs%60).padStart(2,'0')}`;
+      info.status   = CallStatus;
+      await logCallToOdoo(info);
+      setTimeout(() => delete activeCalls[CallSid], 60000);
+    }
   }
   res.sendStatus(200);
 });
 
 app.get('/api/status', (req, res) => {
-  // Clear stale calls older than 30s
   if (incomingCall && Date.now() - incomingCall.time > 30000) incomingCall = null;
   res.json({ incomingCall });
 });
 
-// ── Start ─────────────────────────────────────────────────────────────────────
+// ── ODOO CONTACT SEARCH ───────────────────────────────────────────────────────
+app.get('/api/odoo/search', async (req, res) => {
+  const q = (req.query.q || '').trim();
+  if (q.length < 2 || !ODOO_URL) return res.json([]);
+  try {
+    const auth = await odooUid();
+    if (!auth) return res.json([]);
+    const { uid, c } = auth;
+    const rows = await rpc(c.object, 'execute_kw', [
+      ODOO_DB, uid, ODOO_PASS, 'res.partner', 'search_read',
+      [[['|','|',['name','ilike',q],['mobile','ilike',q],['phone','ilike',q]]]],
+      { fields: ['id','name','mobile','phone','email'], limit: 10 },
+    ]);
+    res.json(rows);
+  } catch(e) { res.json([]); }
+});
+
+app.get('/api/odoo/contact', async (req, res) => {
+  const partner = await findPartner(req.query.phone || '');
+  res.json(partner);
+});
+
+// ── SMS ───────────────────────────────────────────────────────────────────────
+app.post('/api/sms', async (req, res) => {
+  const agent = getAgent(req);
+  if (!agent) return res.status(401).json({ error: 'Not logged in' });
+
+  const { to, message } = req.body;
+  if (!to || !message) return res.status(400).json({ error: 'Missing to/message' });
+
+  try {
+    await twilio(TWILIO_ACCOUNT_SID, TWILIO_AUTH_TOKEN)
+      .messages.create({ to, from: TWILIO_NUMBER, body: message });
+
+    // log to Odoo partner chatter
+    try {
+      const auth = await odooUid();
+      if (auth) {
+        const { uid, c } = auth;
+        const partner = await findPartner(to);
+        if (partner) {
+          await rpc(c.object, 'execute_kw', [
+            ODOO_DB, uid, ODOO_PASS, 'res.partner', 'message_post',
+            [[partner.id]],
+            {
+              body: `💬 SMS sent by ${agent.name}: ${message}`,
+              message_type: 'comment',
+              subtype_xmlid: 'mail.mt_note',
+            },
+          ]);
+        }
+      }
+    } catch(e) {}
+
+    res.json({ success: true });
+  } catch(err) {
+    res.status(500).json({ success: false, error: err.message });
+  }
+});
+
+// ── MANAGER ───────────────────────────────────────────────────────────────────
+app.get('/api/manager/calls', (req, res) => res.json(activeCalls));
+
+// ── START ─────────────────────────────────────────────────────────────────────
 const PORT = process.env.PORT || 3000;
-app.listen(PORT, () => console.log(`✅ Server running on port ${PORT}`));
+app.listen(PORT, () => console.log(`Server running on port ${PORT}`));
