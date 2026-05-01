@@ -1,0 +1,536 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8"/>
+<meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+<title>TwilioCaller</title>
+<link href="https://fonts.googleapis.com/css2?family=Space+Mono:wght@400;700&family=DM+Sans:wght@300;400;500&display=swap" rel="stylesheet"/>
+<style>
+  :root {
+    --bg: #0a0a0f;
+    --surface: #12121a;
+    --card: #1a1a26;
+    --border: #2a2a3e;
+    --accent: #00ff88;
+    --accent2: #7c3aed;
+    --red: #ff4466;
+    --text: #e8e8f0;
+    --muted: #6666aa;
+    --glow: 0 0 30px rgba(0,255,136,0.15);
+  }
+  * { margin:0; padding:0; box-sizing:border-box; }
+  body {
+    background: var(--bg);
+    color: var(--text);
+    font-family: 'DM Sans', sans-serif;
+    min-height: 100vh;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    padding: 20px;
+    background-image:
+      radial-gradient(ellipse at 20% 50%, rgba(124,58,237,0.08) 0%, transparent 60%),
+      radial-gradient(ellipse at 80% 20%, rgba(0,255,136,0.05) 0%, transparent 50%);
+  }
+  .app { width: 100%; max-width: 420px; }
+
+  .header { text-align:center; margin-bottom: 32px; }
+  .header h1 { font-family:'Space Mono',monospace; font-size:1.4rem; letter-spacing:4px; color:var(--accent); text-transform:uppercase; }
+  .header p { color:var(--muted); font-size:0.8rem; margin-top:4px; letter-spacing:1px; }
+
+  .status-bar {
+    background:var(--card); border:1px solid var(--border); border-radius:12px;
+    padding:12px 16px; display:flex; align-items:center; gap:10px;
+    margin-bottom:16px; font-size:0.85rem;
+  }
+  .status-dot { width:8px; height:8px; border-radius:50%; background:var(--muted); transition:all 0.3s; flex-shrink:0; }
+  .status-dot.active  { background:var(--accent); box-shadow:0 0 8px var(--accent); animation:pulse 1.5s infinite; }
+  .status-dot.ringing { background:#ffaa00; box-shadow:0 0 8px #ffaa00; animation:pulse 0.8s infinite; }
+  .status-dot.error   { background:var(--red); }
+  @keyframes pulse { 0%,100%{opacity:1} 50%{opacity:0.4} }
+  #statusText { color:var(--muted); font-family:'Space Mono',monospace; font-size:0.75rem; }
+
+  .tabs { display:flex; background:var(--card); border:1px solid var(--border); border-radius:12px; padding:4px; margin-bottom:16px; }
+  .tab { flex:1; padding:10px; text-align:center; border-radius:8px; cursor:pointer; font-size:0.8rem; font-family:'Space Mono',monospace; letter-spacing:1px; color:var(--muted); transition:all 0.2s; border:none; background:none; }
+  .tab.active { background:var(--accent2); color:white; }
+
+  .panel { display:none; }
+  .panel.active { display:block; }
+
+  .card { background:var(--card); border:1px solid var(--border); border-radius:16px; padding:24px; margin-bottom:16px; }
+
+  .number-display { background:var(--surface); border:1px solid var(--border); border-radius:10px; padding:16px; text-align:center; margin-bottom:20px; min-height:60px; display:flex; align-items:center; justify-content:center; }
+  #dialNumber { font-family:'Space Mono',monospace; font-size:1.6rem; letter-spacing:3px; border:none; background:none; text-align:center; width:100%; outline:none; color:var(--accent); }
+  #dialNumber::placeholder { color:var(--muted); font-size:0.9rem; }
+
+  .keypad { display:grid; grid-template-columns:repeat(3,1fr); gap:10px; margin-bottom:20px; }
+  .key { background:var(--surface); border:1px solid var(--border); border-radius:10px; padding:16px 8px; text-align:center; cursor:pointer; transition:all 0.15s; user-select:none; }
+  .key:hover  { background:var(--border); border-color:var(--accent2); }
+  .key:active { transform:scale(0.95); }
+  .key .digit  { font-family:'Space Mono',monospace; font-size:1.2rem; font-weight:700; color:var(--text); display:block; }
+  .key .letters { font-size:0.55rem; color:var(--muted); letter-spacing:2px; margin-top:2px; }
+
+  .call-actions { display:flex; gap:12px; }
+  .btn-call {
+    flex:1; padding:16px; border-radius:50px; border:none; cursor:pointer;
+    font-family:'Space Mono',monospace; font-size:0.8rem; letter-spacing:2px; font-weight:700;
+    transition:all 0.2s; display:flex; align-items:center; justify-content:center; gap:8px;
+  }
+  .btn-call.green { background:var(--accent); color:#000; box-shadow:var(--glow); }
+  .btn-call.green:hover { transform:translateY(-2px); box-shadow:0 0 40px rgba(0,255,136,0.3); }
+  .btn-call.red   { background:var(--red); color:white; display:none; }
+  .btn-call.red.show   { display:flex; }
+  .btn-call.green.hide { display:none; }
+  .btn-backspace { width:52px; height:52px; border-radius:50%; border:1px solid var(--border); background:var(--surface); cursor:pointer; font-size:1.2rem; color:var(--muted); transition:all 0.2s; display:flex; align-items:center; justify-content:center; }
+  .btn-backspace:hover { border-color:var(--red); color:var(--red); }
+
+  /* Incoming card */
+  .incoming-card {
+    background:linear-gradient(135deg,var(--card),rgba(124,58,237,0.2));
+    border:1px solid var(--accent2); border-radius:16px; padding:24px;
+    text-align:center; margin-bottom:16px; display:none; animation:slideIn 0.3s ease;
+  }
+  .incoming-card.show { display:block; }
+  @keyframes slideIn { from{transform:translateY(-20px);opacity:0} to{transform:translateY(0);opacity:1} }
+  .incoming-avatar { width:70px; height:70px; border-radius:50%; background:var(--accent2); display:flex; align-items:center; justify-content:center; font-size:1.8rem; margin:0 auto 12px; animation:ring 0.8s infinite; }
+  @keyframes ring { 0%,100%{box-shadow:0 0 0 0 rgba(124,58,237,0.4)} 50%{box-shadow:0 0 0 15px rgba(124,58,237,0)} }
+  .incoming-name { font-family:'Space Mono',monospace; font-size:1rem; color:var(--text); margin-bottom:4px; }
+  .incoming-num  { color:var(--muted); font-size:0.85rem; margin-bottom:20px; }
+  .incoming-actions { display:flex; gap:12px; justify-content:center; }
+  .btn-accept,.btn-reject { width:60px; height:60px; border-radius:50%; border:none; cursor:pointer; font-size:1.4rem; transition:all 0.2s; }
+  .btn-accept { background:var(--accent); }
+  .btn-accept:hover { transform:scale(1.1); box-shadow:var(--glow); }
+  .btn-reject { background:var(--red); }
+  .btn-reject:hover { transform:scale(1.1); }
+
+  /* Active call */
+  .active-call { display:none; text-align:center; padding:20px; }
+  .active-call.show { display:block; }
+  .call-timer { font-family:'Space Mono',monospace; font-size:2rem; color:var(--accent); margin:12px 0; }
+  .call-controls { display:flex; gap:12px; justify-content:center; margin-top:20px; }
+  .ctrl-btn { width:54px; height:54px; border-radius:50%; border:1px solid var(--border); background:var(--surface); color:var(--text); font-size:1.1rem; cursor:pointer; transition:all 0.2s; display:flex; align-items:center; justify-content:center; }
+  .ctrl-btn:hover { border-color:var(--accent2); color:var(--accent2); }
+  .ctrl-btn.active-ctrl { background:var(--accent2); border-color:var(--accent2); }
+
+  /* Receive tab */
+  .receiver-info { text-align:center; padding:20px 0; }
+  .receiver-info .big-num { font-family:'Space Mono',monospace; font-size:1.3rem; color:var(--accent); margin-bottom:8px; }
+  .receiver-info p { color:var(--muted); font-size:0.8rem; line-height:1.6; }
+  .label { font-size:0.75rem; color:var(--muted); font-family:'Space Mono',monospace; letter-spacing:1px; margin-bottom:8px; }
+  .input-field { width:100%; background:var(--surface); border:1px solid var(--border); border-radius:8px; padding:12px 14px; color:var(--text); font-family:'Space Mono',monospace; font-size:0.9rem; outline:none; transition:border-color 0.2s; margin-bottom:12px; }
+  .input-field:focus { border-color:var(--accent2); }
+  .btn-save { width:100%; padding:12px; background:var(--accent2); border:none; border-radius:8px; color:white; font-family:'Space Mono',monospace; font-size:0.8rem; letter-spacing:2px; cursor:pointer; transition:all 0.2s; }
+  .btn-save:hover { opacity:0.85; }
+
+  /* Logs */
+  .log-list { max-height:200px; overflow-y:auto; }
+  .log-item { display:flex; align-items:center; gap:12px; padding:10px 0; border-bottom:1px solid var(--border); font-size:0.82rem; }
+  .log-item:last-child { border-bottom:none; }
+  .log-num  { font-family:'Space Mono',monospace; color:var(--text); }
+  .log-time { color:var(--muted); font-size:0.7rem; margin-left:auto; }
+  .log-type { font-size:0.7rem; padding:2px 6px; border-radius:4px; }
+  .log-type.out    { background:rgba(0,255,136,0.1); color:var(--accent); }
+  .log-type.in     { background:rgba(124,58,237,0.2); color:#a78bfa; }
+  .log-type.missed { background:rgba(255,68,102,0.1); color:var(--red); }
+
+  /* Toast */
+  .toast { position:fixed; bottom:20px; left:50%; transform:translateX(-50%) translateY(100px); background:var(--card); border:1px solid var(--border); padding:12px 20px; border-radius:8px; font-family:'Space Mono',monospace; font-size:0.75rem; transition:transform 0.3s; z-index:999; white-space:nowrap; }
+  .toast.show    { transform:translateX(-50%) translateY(0); }
+  .toast.success { border-color:var(--accent); color:var(--accent); }
+  .toast.error   { border-color:var(--red); color:var(--red); }
+
+  ::-webkit-scrollbar { width:4px; }
+  ::-webkit-scrollbar-track { background:var(--surface); }
+  ::-webkit-scrollbar-thumb { background:var(--border); border-radius:2px; }
+</style>
+</head>
+<body>
+<div class="app">
+  <div class="header">
+    <h1>📞 TwilioCaller</h1>
+    <p>POWERED BY TWILIO</p>
+  </div>
+
+  <div class="status-bar">
+    <div class="status-dot" id="statusDot"></div>
+    <span id="statusText">READY</span>
+  </div>
+
+  <!-- Incoming call -->
+  <div class="incoming-card" id="incomingCard">
+    <div class="incoming-avatar">📲</div>
+    <div class="incoming-name">Incoming Call</div>
+    <div class="incoming-num" id="incomingNum">Unknown</div>
+    <div class="incoming-actions">
+      <button class="btn-accept" onclick="acceptCall()" title="Accept">📞</button>
+      <button class="btn-reject" onclick="rejectCall()" title="Reject">📵</button>
+    </div>
+  </div>
+
+  <div class="tabs">
+    <button class="tab active" onclick="switchTab('dialer',this)">DIAL</button>
+    <button class="tab" onclick="switchTab('receive',this)">RECEIVE</button>
+    <button class="tab" onclick="switchTab('logs',this)">LOGS</button>
+  </div>
+
+  <!-- DIALER -->
+  <div class="panel active" id="tab-dialer">
+    <div class="card">
+      <div class="active-call" id="activeCallUI">
+        <div style="font-size:2rem">📞</div>
+        <div style="color:var(--muted);font-size:0.8rem;margin-top:8px">CONNECTED TO</div>
+        <div id="activeCallNum" style="font-family:'Space Mono',monospace;font-size:1.1rem;color:var(--accent);margin:4px 0"></div>
+        <div class="call-timer" id="callTimer">00:00</div>
+        <div class="call-controls">
+          <button class="ctrl-btn" id="muteBtn" onclick="toggleMute()">🎤</button>
+          <button class="ctrl-btn" onclick="hangUp()" style="background:var(--red);border-color:var(--red);color:white;font-size:1.2rem">📵</button>
+          <button class="ctrl-btn" onclick="showToast('Use your phone speaker','')" >🔊</button>
+        </div>
+      </div>
+
+      <div id="normalDialerUI">
+        <div class="number-display">
+          <input type="tel" id="dialNumber" placeholder="+1 (XXX) XXX-XXXX"/>
+        </div>
+        <div class="keypad">
+          <div class="key" onclick="pressKey('1')"><span class="digit">1</span><span class="letters"> </span></div>
+          <div class="key" onclick="pressKey('2')"><span class="digit">2</span><span class="letters">ABC</span></div>
+          <div class="key" onclick="pressKey('3')"><span class="digit">3</span><span class="letters">DEF</span></div>
+          <div class="key" onclick="pressKey('4')"><span class="digit">4</span><span class="letters">GHI</span></div>
+          <div class="key" onclick="pressKey('5')"><span class="digit">5</span><span class="letters">JKL</span></div>
+          <div class="key" onclick="pressKey('6')"><span class="digit">6</span><span class="letters">MNO</span></div>
+          <div class="key" onclick="pressKey('7')"><span class="digit">7</span><span class="letters">PQRS</span></div>
+          <div class="key" onclick="pressKey('8')"><span class="digit">8</span><span class="letters">TUV</span></div>
+          <div class="key" onclick="pressKey('9')"><span class="digit">9</span><span class="letters">WXYZ</span></div>
+          <div class="key" onclick="pressKey('*')"><span class="digit">*</span></div>
+          <div class="key" onclick="pressKey('0')"><span class="digit">0</span><span class="letters">+</span></div>
+          <div class="key" onclick="pressKey('#')"><span class="digit">#</span></div>
+        </div>
+        <div class="call-actions">
+          <button class="btn-call green" id="callBtn" onclick="makeCall()">📞 CALL</button>
+          <button class="btn-call red"   id="hangupBtn" onclick="hangUp()">📵 END</button>
+          <button class="btn-backspace"  onclick="backspace()">⌫</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- RECEIVE -->
+  <div class="panel" id="tab-receive">
+    <div class="card">
+      <div class="receiver-info">
+        <div class="big-num">+1 929 296 1896</div>
+        <p>Your Twilio number. Calls to this number<br/>will ring your Indian phone automatically.</p>
+      </div>
+      <div style="margin-top:20px">
+        <div class="label">YOUR VERCEL WEBHOOK URL</div>
+        <input class="input-field" type="text" id="webhookUrl" readonly/>
+        <button class="btn-save" onclick="copyWebhook()">📋 COPY WEBHOOK URL</button>
+      </div>
+    </div>
+    <div class="card">
+      <div class="label" style="margin-bottom:12px">HOW IT WORKS</div>
+      <div style="color:var(--muted);font-size:0.82rem;line-height:2">
+        1️⃣ Deploy this app on Vercel<br/>
+        2️⃣ Copy the Webhook URL above<br/>
+        3️⃣ Twilio Console → +1 929 296 1896 → Voice Webhook<br/>
+        4️⃣ Paste URL → Save<br/>
+        5️⃣ Someone calls → your phone +91 rings! 📱
+      </div>
+    </div>
+  </div>
+
+  <!-- LOGS -->
+  <div class="panel" id="tab-logs">
+    <div class="card">
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:16px">
+        <div class="label" style="margin:0">CALL HISTORY</div>
+        <button onclick="clearLogs()" style="background:none;border:none;color:var(--muted);cursor:pointer;font-size:0.75rem">CLEAR</button>
+      </div>
+      <div class="log-list" id="logList">
+        <div style="color:var(--muted);text-align:center;font-size:0.8rem;padding:20px">No calls yet</div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<div class="toast" id="toast"></div>
+
+<script>
+// ── State ──────────────────────────────────────────────────────────────────────
+let callActive = false;
+let callInterval = null;
+let callSeconds = 0;
+let muted = false;
+let currentCallSid = null;
+let lastIncomingSid = null;
+let ringtoneInterval = null;
+let logs = JSON.parse(localStorage.getItem('callLogs') || '[]');
+
+// ── Init ───────────────────────────────────────────────────────────────────────
+window.onload = () => {
+  document.getElementById('webhookUrl').value = window.location.origin + '/api/incoming';
+  renderLogs();
+  requestNotificationPermission();
+  startPolling();
+
+  // Keyboard support
+  document.addEventListener('keydown', e => {
+    if (!callActive && '0123456789*#'.includes(e.key)) pressKey(e.key);
+    if (e.key === 'Backspace' && !callActive) backspace();
+    if (e.key === 'Enter') makeCall();
+  });
+};
+
+// ── Tabs ───────────────────────────────────────────────────────────────────────
+function switchTab(name, el) {
+  document.querySelectorAll('.panel').forEach(p => p.classList.remove('active'));
+  document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
+  document.getElementById('tab-' + name).classList.add('active');
+  el.classList.add('active');
+}
+
+// ── Keypad ─────────────────────────────────────────────────────────────────────
+function pressKey(k) {
+  document.getElementById('dialNumber').value += k;
+  playTone(800);
+}
+function backspace() {
+  const el = document.getElementById('dialNumber');
+  el.value = el.value.slice(0, -1);
+}
+function playTone(freq) {
+  try {
+    const ctx = new (window.AudioContext || window.webkitAudioContext)();
+    const o = ctx.createOscillator(), g = ctx.createGain();
+    o.connect(g); g.connect(ctx.destination);
+    o.frequency.value = freq; g.gain.value = 0.05;
+    o.start(); o.stop(ctx.currentTime + 0.06);
+  } catch(e) {}
+}
+
+// ── Status ─────────────────────────────────────────────────────────────────────
+function setStatus(text, type) {
+  document.getElementById('statusText').textContent = text;
+  const dot = document.getElementById('statusDot');
+  dot.className = 'status-dot' + (type ? ' ' + type : '');
+}
+
+// ── Make call ──────────────────────────────────────────────────────────────────
+async function makeCall() {
+  const number = document.getElementById('dialNumber').value.trim();
+  if (!number) { showToast('Enter a number first', 'error'); return; }
+
+  setStatus('CALLING ' + number + '...', 'ringing');
+  document.getElementById('callBtn').classList.add('hide');
+  document.getElementById('hangupBtn').classList.add('show');
+
+  try {
+    const res  = await fetch('/api/call', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ to: number })
+    });
+    const data = await res.json();
+
+    if (data.success) {
+      currentCallSid = data.callSid;
+      startCallUI(number, 'out');
+      showToast('Calling... pick up your phone! 📱', 'success');
+    } else {
+      resetCallUI();
+      showToast(data.error || 'Call failed', 'error');
+      setStatus('FAILED', 'error');
+    }
+  } catch(e) {
+    resetCallUI();
+    showToast('Server error — is app deployed?', 'error');
+    setStatus('ERROR', 'error');
+  }
+}
+
+// ── Hang up ────────────────────────────────────────────────────────────────────
+async function hangUp() {
+  if (currentCallSid) {
+    try {
+      await fetch('/api/hangup', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ callSid: currentCallSid })
+      });
+    } catch(e) {}
+  }
+  updateLastLog('ended');
+  resetCallUI();
+  showToast('Call ended', '');
+}
+
+// ── Call UI ────────────────────────────────────────────────────────────────────
+function startCallUI(number, type) {
+  callActive = true; callSeconds = 0;
+  document.getElementById('normalDialerUI').style.display = 'none';
+  document.getElementById('activeCallUI').classList.add('show');
+  document.getElementById('activeCallNum').textContent = number;
+  setStatus('ON CALL', 'active');
+  callInterval = setInterval(() => {
+    callSeconds++;
+    const m = String(Math.floor(callSeconds / 60)).padStart(2, '0');
+    const s = String(callSeconds % 60).padStart(2, '0');
+    document.getElementById('callTimer').textContent = m + ':' + s;
+  }, 1000);
+  addLog(number, type, 'active');
+}
+
+function resetCallUI() {
+  callActive = false;
+  clearInterval(callInterval);
+  currentCallSid = null; muted = false;
+  document.getElementById('normalDialerUI').style.display = 'block';
+  document.getElementById('activeCallUI').classList.remove('show');
+  document.getElementById('callBtn').classList.remove('hide');
+  document.getElementById('hangupBtn').classList.remove('show');
+  document.getElementById('muteBtn').textContent = '🎤';
+  document.getElementById('muteBtn').classList.remove('active-ctrl');
+  setStatus('READY', '');
+}
+
+function toggleMute() {
+  muted = !muted;
+  document.getElementById('muteBtn').classList.toggle('active-ctrl', muted);
+  document.getElementById('muteBtn').textContent = muted ? '🔇' : '🎤';
+  showToast(muted ? 'Muted' : 'Unmuted', '');
+}
+
+// ── Ringtone ───────────────────────────────────────────────────────────────────
+function startRingtone() {
+  stopRingtone();
+  function beep() {
+    try {
+      const ctx = new (window.AudioContext || window.webkitAudioContext)();
+      [0, 0.25].forEach(t => {
+        const o = ctx.createOscillator(), g = ctx.createGain();
+        o.connect(g); g.connect(ctx.destination);
+        o.frequency.value = 480;
+        g.gain.setValueAtTime(0.3, ctx.currentTime + t);
+        g.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + t + 0.2);
+        o.start(ctx.currentTime + t);
+        o.stop(ctx.currentTime + t + 0.2);
+      });
+    } catch(e) {}
+  }
+  beep();
+  ringtoneInterval = setInterval(beep, 2500);
+}
+function stopRingtone() {
+  if (ringtoneInterval) { clearInterval(ringtoneInterval); ringtoneInterval = null; }
+}
+
+// ── Polling for incoming calls ─────────────────────────────────────────────────
+function startPolling() {
+  setInterval(async () => {
+    try {
+      const res  = await fetch('/api/status');
+      const data = await res.json();
+      if (data.incomingCall && !callActive) {
+        if (data.incomingCall.sid !== lastIncomingSid) {
+          lastIncomingSid = data.incomingCall.sid;
+          showIncoming(data.incomingCall.from);
+        }
+      } else if (!data.incomingCall) {
+        lastIncomingSid = null;
+        const card = document.getElementById('incomingCard');
+        if (card.classList.contains('show') && !callActive) {
+          card.classList.remove('show');
+          stopRingtone();
+          setStatus('READY', '');
+        }
+      }
+    } catch(e) {}
+  }, 2000);
+}
+
+function showIncoming(from) {
+  document.getElementById('incomingNum').textContent = from;
+  document.getElementById('incomingCard').classList.add('show');
+  setStatus('INCOMING CALL', 'ringing');
+  startRingtone();
+  if (navigator.vibrate) navigator.vibrate([800,400,800,400,800]);
+  if (Notification.permission === 'granted') {
+    new Notification('📞 Incoming Call', { body: 'From: ' + from });
+  }
+}
+
+function acceptCall() {
+  document.getElementById('incomingCard').classList.remove('show');
+  stopRingtone();
+  const num = document.getElementById('incomingNum').textContent;
+  startCallUI(num, 'in');
+  showToast('Connected — pick up your phone! 📱', 'success');
+}
+
+function rejectCall() {
+  document.getElementById('incomingCard').classList.remove('show');
+  stopRingtone();
+  addLog(document.getElementById('incomingNum').textContent, 'missed', 'missed');
+  lastIncomingSid = null;
+  setStatus('READY', '');
+  showToast('Call rejected', '');
+}
+
+// ── Notifications ──────────────────────────────────────────────────────────────
+function requestNotificationPermission() {
+  if ('Notification' in window && Notification.permission === 'default') {
+    Notification.requestPermission();
+  }
+}
+
+// ── Webhook copy ───────────────────────────────────────────────────────────────
+function copyWebhook() {
+  const url = document.getElementById('webhookUrl').value;
+  navigator.clipboard.writeText(url)
+    .then(() => showToast('Webhook URL copied! ✓', 'success'))
+    .catch(() => showToast('Copy manually: ' + url, ''));
+}
+
+// ── Call logs ──────────────────────────────────────────────────────────────────
+function addLog(number, type, status) {
+  const now = new Date();
+  logs.unshift({ number, type, status, time: now.toLocaleTimeString([], {hour:'2-digit',minute:'2-digit'}), date: now.toLocaleDateString() });
+  if (logs.length > 50) logs.pop();
+  localStorage.setItem('callLogs', JSON.stringify(logs));
+  renderLogs();
+}
+function updateLastLog(status) {
+  if (logs.length > 0) {
+    logs[0].status   = status;
+    logs[0].duration = document.getElementById('callTimer').textContent;
+    localStorage.setItem('callLogs', JSON.stringify(logs));
+    renderLogs();
+  }
+}
+function renderLogs() {
+  const el = document.getElementById('logList');
+  if (!logs.length) { el.innerHTML = '<div style="color:var(--muted);text-align:center;font-size:0.8rem;padding:20px">No calls yet</div>'; return; }
+  el.innerHTML = logs.map(l => `
+    <div class="log-item">
+      <span>${l.type==='out'?'📤':l.type==='missed'?'📵':'📥'}</span>
+      <div>
+        <div class="log-num">${l.number}</div>
+        <div style="color:var(--muted);font-size:0.7rem">${l.date} ${l.time}${l.duration?' · '+l.duration:''}</div>
+      </div>
+      <span class="log-type ${l.type==='missed'?'missed':l.type==='out'?'out':'in'}">${l.type.toUpperCase()}</span>
+    </div>`).join('');
+}
+function clearLogs() { logs=[]; localStorage.removeItem('callLogs'); renderLogs(); }
+
+// ── Toast ──────────────────────────────────────────────────────────────────────
+function showToast(msg, type) {
+  const t = document.getElementById('toast');
+  t.textContent = msg;
+  t.className = 'toast show' + (type ? ' ' + type : '');
+  setTimeout(() => t.classList.remove('show'), 2800);
+}
+</script>
+</body>
+</html>
