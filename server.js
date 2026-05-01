@@ -28,6 +28,27 @@ const AGENTS = [
   { name: 'Agent3', pin: '9012', phone: AGENT3_PHONE     },
 ];
 
+const REQUIRED_ENV = [
+  'TWILIO_ACCOUNT_SID',
+  'TWILIO_AUTH_TOKEN',
+  'TWILIO_NUMBER',
+  'MY_PHONE_NUMBER',
+];
+
+function missingEnv() {
+  return REQUIRED_ENV.filter((key) => !process.env[key]);
+}
+
+function ensureTwilioConfig(res) {
+  const missing = missingEnv();
+  if (!missing.length) return true;
+  res.status(500).json({
+    success: false,
+    error: `Missing required environment variable(s): ${missing.join(', ')}`,
+  });
+  return false;
+}
+
 // ── IN-MEMORY STATE ───────────────────────────────────────────────────────────
 const activeCalls = {};   // callSid → call info
 let   incomingCall = null;
@@ -56,6 +77,7 @@ function verifyToken(token) {
 }
 
 app.post('/api/agent/login', (req, res) => {
+  if (!ensureTwilioConfig(res)) return;
   const { name, pin } = req.body;
   const agent = AGENTS.find(a => a.name === name && a.pin === pin);
   if (!agent) return res.status(401).json({ error: 'Invalid credentials' });
@@ -168,6 +190,7 @@ Status: ${info.status}${rec}${notes}`;
 
 // ── OUTBOUND CALL ─────────────────────────────────────────────────────────────
 app.post('/api/call', async (req, res) => {
+  if (!ensureTwilioConfig(res)) return;
   const agent = getAgent(req);
   if (!agent) return res.status(401).json({ error: 'Not logged in' });
 
@@ -227,6 +250,7 @@ app.post('/api/call', async (req, res) => {
 
 // ── HANGUP ────────────────────────────────────────────────────────────────────
 app.post('/api/hangup', async (req, res) => {
+  if (!ensureTwilioConfig(res)) return;
   const { callSid } = req.body;
   if (!callSid) return res.status(400).json({ error: 'Missing callSid' });
   try {
@@ -247,6 +271,16 @@ app.post('/api/call/notes', (req, res) => {
 
 // ── INBOUND WEBHOOK ───────────────────────────────────────────────────────────
 app.post('/api/incoming', (req, res) => {
+  const missing = missingEnv();
+  if (missing.length) {
+    res.setHeader('Content-Type', 'text/xml');
+    res.status(500).send(`<?xml version="1.0" encoding="UTF-8"?>
+<Response>
+  <Say voice="alice">Call routing is not configured. Missing ${missing.join(', ')}.</Say>
+</Response>`);
+    return;
+  }
+
   const from    = req.body.From    || 'Unknown';
   const callSid = req.body.CallSid || '';
   const base    = getBaseUrl(req);
@@ -345,6 +379,7 @@ app.get('/api/odoo/contact', async (req, res) => {
 
 // ── SMS ───────────────────────────────────────────────────────────────────────
 app.post('/api/sms', async (req, res) => {
+  if (!ensureTwilioConfig(res)) return;
   const agent = getAgent(req);
   if (!agent) return res.status(401).json({ error: 'Not logged in' });
 
