@@ -214,8 +214,9 @@ app.post('/api/call', async (req, res) => {
       statusCallbackEvent: ['initiated','ringing','answered','completed'],
       twiml: `<?xml version="1.0" encoding="UTF-8"?>
 <Response>
-  <Say voice="alice">Please wait, connecting your call.</Say>
+  <Say voice="alice">Please wait while we connect you.</Say>
   <Dial callerId="${TWILIO_NUMBER}"
+        answerOnBridge="true"
         record="record-from-ringing"
         recordingStatusCallback="${base}/api/recording"
         recordingStatusCallbackMethod="POST"
@@ -296,8 +297,9 @@ app.post('/api/incoming', (req, res) => {
   res.setHeader('Content-Type', 'text/xml');
   res.send(`<?xml version="1.0" encoding="UTF-8"?>
 <Response>
-  <Say voice="alice">Please wait, connecting your call.</Say>
+  <Say voice="alice">Please wait while we connect you.</Say>
   <Dial callerId="${TWILIO_NUMBER}"
+        answerOnBridge="true"
         record="record-from-ringing"
         recordingStatusCallback="${base}/api/recording"
         recordingStatusCallbackMethod="POST"
