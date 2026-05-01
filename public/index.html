@@ -681,7 +681,7 @@ async function makeCall() {
         odooPartnerName: selectedContact?.name ?? null,
       }),
     });
-    if (r.status===401) { doLogout(); return; }
+    if (r.status===401) { resetCallUI(); toast('Session expired — please login again','error'); setTimeout(doLogout,1500); return; }
     const d = await r.json();
     if (d.success) {
       currentCallSid = d.callSid;

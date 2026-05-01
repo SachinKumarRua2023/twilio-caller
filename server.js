@@ -29,27 +29,44 @@ const AGENTS = [
 ];
 
 // ── IN-MEMORY STATE ───────────────────────────────────────────────────────────
-const sessions    = {};   // token → { name, phone }
 const activeCalls = {};   // callSid → call info
 let   incomingCall = null;
 
-// ── AGENT AUTH ────────────────────────────────────────────────────────────────
+// ── STATELESS TOKEN AUTH ──────────────────────────────────────────────────────
+// Token = base64url(payload).hmac — no server-side storage, survives restarts.
+const TOKEN_SECRET = TWILIO_AUTH_TOKEN || 'callcenter-secret-key';
+
+function makeToken(agent) {
+  const payload = Buffer.from(JSON.stringify({ name: agent.name, phone: agent.phone }))
+    .toString('base64url');
+  const sig = crypto.createHmac('sha256', TOKEN_SECRET).update(payload).digest('base64url');
+  return `${payload}.${sig}`;
+}
+
+function verifyToken(token) {
+  if (!token) return null;
+  const dot = token.lastIndexOf('.');
+  if (dot < 0) return null;
+  const payload = token.slice(0, dot);
+  const sig     = token.slice(dot + 1);
+  const expected = crypto.createHmac('sha256', TOKEN_SECRET).update(payload).digest('base64url');
+  if (sig !== expected) return null;
+  try { return JSON.parse(Buffer.from(payload, 'base64url').toString()); }
+  catch(e) { return null; }
+}
+
 app.post('/api/agent/login', (req, res) => {
   const { name, pin } = req.body;
   const agent = AGENTS.find(a => a.name === name && a.pin === pin);
   if (!agent) return res.status(401).json({ error: 'Invalid credentials' });
-  const token = crypto.randomBytes(16).toString('hex');
-  sessions[token] = { name: agent.name, phone: agent.phone || MY_PHONE_NUMBER };
-  res.json({ token, agent: { name: agent.name, phone: sessions[token].phone } });
+  const agentData = { name: agent.name, phone: agent.phone || MY_PHONE_NUMBER };
+  res.json({ token: makeToken(agentData), agent: agentData });
 });
 
-app.post('/api/agent/logout', (req, res) => {
-  delete sessions[req.headers['x-agent-token']];
-  res.json({ success: true });
-});
+app.post('/api/agent/logout', (req, res) => res.json({ success: true }));
 
 function getAgent(req) {
-  return sessions[req.headers['x-agent-token']] || null;
+  return verifyToken(req.headers['x-agent-token']);
 }
 
 // ── ODOO ──────────────────────────────────────────────────────────────────────
