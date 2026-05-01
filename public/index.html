@@ -421,8 +421,12 @@ body {
           <button class="ctrl-btn" onclick="toast('Use your physical phone','')">🔊</button>
         </div>
         <div class="notes-area">
-          <div class="lbl" style="margin-top:14px">NOTES</div>
-          <textarea class="notes-ta" id="callNotes" placeholder="Type notes during call…"></textarea>
+          <div class="lbl" style="margin-top:14px;display:flex;align-items:center;justify-content:space-between;">
+            NOTES
+            <span id="notesSavedIndicator" style="font-size:10px;color:var(--accent);opacity:0;transition:opacity .3s;">✓ Saved</span>
+          </div>
+          <textarea class="notes-ta" id="callNotes" placeholder="Type notes during call…" oninput="scheduleNotesSave()"></textarea>
+          <button onclick="saveNotes()" style="margin-top:8px;width:100%;padding:8px;background:var(--accent2);color:#fff;border:none;border-radius:6px;font-size:12px;font-weight:600;cursor:pointer;letter-spacing:.05em;">💾 SAVE NOTES TO ODOO</button>
         </div>
       </div>
 
@@ -697,8 +701,32 @@ async function makeCall() {
   } catch(e) { resetCallUI(); toast('Server error','error'); setStatus('ERROR','error'); }
 }
 
+// ── NOTES SAVE ─────────────────────────────────────────────────────────────────
+let notesSaveTimer = null;
+
+function scheduleNotesSave() {
+  clearTimeout(notesSaveTimer);
+  notesSaveTimer = setTimeout(saveNotes, 1500);
+}
+
+async function saveNotes() {
+  clearTimeout(notesSaveTimer);
+  const notes = document.getElementById('callNotes').value.trim();
+  if (!currentCallSid || !notes) return;
+  try {
+    await fetch('/api/call/notes', {
+      method: 'POST', headers: {'Content-Type':'application/json'},
+      body: JSON.stringify({callSid: currentCallSid, notes}),
+    });
+    const ind = document.getElementById('notesSavedIndicator');
+    ind.style.opacity = '1';
+    setTimeout(() => ind.style.opacity = '0', 2000);
+  } catch(e) {}
+}
+
 // ── HANG UP ────────────────────────────────────────────────────────────────────
 async function hangUp() {
+  await saveNotes();
   const notes = document.getElementById('callNotes').value.trim();
   if (currentCallSid && notes) {
     fetch('/api/call/notes',{
