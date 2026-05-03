@@ -25,10 +25,10 @@ const getBaseUrl = (req) =>
 // ── AGENTS ────────────────────────────────────────────────────────────────────
 const AGENTS = [
   { name: process.env.AGENT1_NAME || 'Sachin', pin: process.env.AGENT1_PIN || '1234', phone: MY_PHONE_NUMBER },
-  { name: process.env.AGENT2_NAME || 'Junior1', pin: process.env.AGENT2_PIN || '2222', phone: AGENT2_PHONE  },
-  { name: process.env.AGENT3_NAME || 'Junior2', pin: process.env.AGENT3_PIN || '3333', phone: AGENT3_PHONE  },
-  { name: process.env.AGENT4_NAME || 'Junior3', pin: process.env.AGENT4_PIN || '4444', phone: AGENT4_PHONE  },
-  { name: process.env.AGENT5_NAME || 'Junior4', pin: process.env.AGENT5_PIN || '5555', phone: AGENT5_PHONE  },
+  { name: process.env.AGENT2_NAME || 'Vivek',   pin: process.env.AGENT2_PIN || '2222', phone: AGENT2_PHONE  },
+  { name: process.env.AGENT3_NAME || 'Pradeep', pin: process.env.AGENT3_PIN || '3333', phone: AGENT3_PHONE  },
+  { name: process.env.AGENT4_NAME || 'Junior4', pin: process.env.AGENT4_PIN || '4444', phone: AGENT4_PHONE  },
+  { name: process.env.AGENT5_NAME || 'Junior5', pin: process.env.AGENT5_PIN || '5555', phone: AGENT5_PHONE  },
 ].filter(a => a.phone); // only include agents that have a phone number configured
 
 const REQUIRED_ENV = [
