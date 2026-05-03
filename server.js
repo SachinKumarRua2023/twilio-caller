@@ -290,14 +290,14 @@ app.post('/api/call/notes', (req, res) => {
   res.json({ success: true });
 });
 
-// ── INBOUND WEBHOOK ───────────────────────────────────────────────────────────
+// ── INBOUND WEBHOOK — IVR GREETING ───────────────────────────────────────────
 app.post('/api/incoming', (req, res) => {
   const missing = missingEnv();
   if (missing.length) {
     res.setHeader('Content-Type', 'text/xml');
     res.status(500).send(`<?xml version="1.0" encoding="UTF-8"?>
 <Response>
-  <Say voice="alice">Call routing is not configured. Missing ${missing.join(', ')}.</Say>
+  <Say voice="alice">Call routing is not configured.</Say>
 </Response>`);
     return;
   }
@@ -308,29 +308,94 @@ app.post('/api/incoming', (req, res) => {
 
   incomingCall = { from, sid: callSid, time: Date.now() };
   activeCalls[callSid] = {
-    callSid, agent: 'Incoming', agentPhone: MY_PHONE_NUMBER,
+    callSid, agent: 'IVR', agentPhone: MY_PHONE_NUMBER,
     to: from, direction: 'in', startTime: Date.now(),
     status: 'ringing', recordingUrl: null, notes: '',
     odooPartnerId: null, odooPartnerName: null,
   };
 
-  const inMeta = new URLSearchParams({ agent: 'Incoming', to: from, dir: 'in' }).toString();
+  res.setHeader('Content-Type', 'text/xml');
+  res.send(`<?xml version="1.0" encoding="UTF-8"?>
+<Response>
+  <Gather input="dtmf speech" action="${base}/api/ivr" method="POST"
+          timeout="6" numDigits="1"
+          hints="Sachin, one, 1, team, two, 2, member"
+          speechModel="phone_call" language="en-IN">
+    <Say voice="alice">
+      Who would you like to speak with?
+      Press 1 or say Sachin to speak with Sachin.
+      Press 2 or say team to speak with a team member.
+    </Say>
+  </Gather>
+  <Say voice="alice">We did not receive your input. Connecting you to Sachin.</Say>
+  <Dial callerId="${TWILIO_NUMBER}" answerOnBridge="true"
+        record="record-from-ringing"
+        recordingStatusCallback="${base}/api/recording"
+        recordingStatusCallbackMethod="POST"
+        action="${base}/api/dial-done" method="POST" timeout="30">
+    <Number statusCallbackEvent="initiated ringing answered completed"
+            statusCallback="${base}/api/status?agent=Sachin&amp;to=${encodeURIComponent(from)}&amp;dir=in"
+            statusCallbackMethod="POST">${MY_PHONE_NUMBER}</Number>
+  </Dial>
+</Response>`);
+});
+
+// ── IVR RESPONSE — ROUTE BASED ON PRESS/SPEECH ───────────────────────────────
+app.post('/api/ivr', (req, res) => {
+  const { Digits, SpeechResult, From, CallSid } = req.body;
+  const base   = getBaseUrl(req);
+  const from   = From || 'Unknown';
+  const speech = (SpeechResult || '').toLowerCase();
+  const digit  = (Digits || '').trim();
+
+  const wantsTeam = digit === '2'
+    || speech.includes('team')
+    || speech.includes('member')
+    || speech.includes('two');
+
+  let targetPhone = MY_PHONE_NUMBER;
+  let agentName   = 'Sachin';
+
+  if (wantsTeam) {
+    // Ring all team members simultaneously — first to answer gets the call
+    const team = AGENTS.filter(a => a.name !== 'Sachin' && a.phone);
+    if (team.length) {
+      targetPhone = null; // handled below with multiple <Number> tags
+      agentName   = 'Team';
+    }
+  }
+
+  if (activeCalls[CallSid]) {
+    activeCalls[CallSid].agent     = agentName;
+    activeCalls[CallSid].agentPhone = targetPhone || MY_PHONE_NUMBER;
+  }
+
+  const statusBase = `${base}/api/status?agent=${encodeURIComponent(agentName)}&amp;to=${encodeURIComponent(from)}&amp;dir=in`;
+
+  let numberTags;
+  if (agentName === 'Team') {
+    const team = AGENTS.filter(a => a.name !== 'Sachin' && a.phone);
+    numberTags = team.map(a =>
+      `<Number statusCallbackEvent="initiated ringing answered completed"
+               statusCallback="${base}/api/status?agent=${encodeURIComponent(a.name)}&amp;to=${encodeURIComponent(from)}&amp;dir=in"
+               statusCallbackMethod="POST">${a.phone}</Number>`
+    ).join('\n    ');
+  } else {
+    numberTags = `<Number statusCallbackEvent="initiated ringing answered completed"
+               statusCallback="${statusBase}"
+               statusCallbackMethod="POST">${MY_PHONE_NUMBER}</Number>`;
+  }
 
   res.setHeader('Content-Type', 'text/xml');
   res.send(`<?xml version="1.0" encoding="UTF-8"?>
 <Response>
-  <Say voice="alice">Please wait while we connect you.</Say>
-  <Dial callerId="${TWILIO_NUMBER}"
-        answerOnBridge="true"
+  <Say voice="alice">Connecting you to ${agentName === 'Team' ? 'a team member' : agentName}. Please hold.</Say>
+  <Dial callerId="${TWILIO_NUMBER}" answerOnBridge="true"
         record="record-from-ringing"
         recordingStatusCallback="${base}/api/recording"
         recordingStatusCallbackMethod="POST"
-        action="${base}/api/dial-done"
-        method="POST"
-        timeout="30">
-    <Number statusCallbackEvent="initiated ringing answered completed"
-            statusCallback="${base}/api/status?${inMeta}"
-            statusCallbackMethod="POST">${MY_PHONE_NUMBER}</Number>
+        action="${base}/api/dial-done" method="POST" timeout="30">
+    ${numberTags}
   </Dial>
 </Response>`);
 });
