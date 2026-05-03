@@ -215,13 +215,15 @@ app.post('/api/call', async (req, res) => {
 
   // Encode call metadata into callback URLs so Vercel serverless instances
   // can log the call even if activeCalls is empty (no shared memory between requests).
-  const meta = new URLSearchParams({
+  const meta     = new URLSearchParams({
     agent: agent.name,
     to,
     dir: 'out',
     ...(odooPartnerId   ? { pid:   String(odooPartnerId)   } : {}),
     ...(odooPartnerName ? { pname: odooPartnerName         } : {}),
   }).toString();
+  // Inside TwiML (XML), & must be &amp; — otherwise Twilio rejects the XML and says "application error"
+  const metaXml  = meta.replace(/&/g, '&amp;');
 
   try {
     const client = twilio(TWILIO_ACCOUNT_SID, TWILIO_AUTH_TOKEN);
@@ -238,7 +240,7 @@ app.post('/api/call', async (req, res) => {
   <Dial callerId="${TWILIO_NUMBER}"
         answerOnBridge="true"
         record="record-from-ringing"
-        recordingStatusCallback="${base}/api/recording?${meta}"
+        recordingStatusCallback="${base}/api/recording?${metaXml}"
         recordingStatusCallbackMethod="POST"
         action="${base}/api/dial-done"
         method="POST"
