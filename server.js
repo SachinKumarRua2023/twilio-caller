@@ -14,6 +14,7 @@ const {
   TWILIO_ACCOUNT_SID, TWILIO_AUTH_TOKEN,
   TWILIO_NUMBER,      MY_PHONE_NUMBER,
   AGENT2_PHONE,       AGENT3_PHONE,
+  AGENT4_PHONE,       AGENT5_PHONE,
   ODOO_URL,           ODOO_DB,
   ODOO_USER,          ODOO_PASS
 } = process.env;
@@ -23,10 +24,12 @@ const getBaseUrl = (req) =>
 
 // ── AGENTS ────────────────────────────────────────────────────────────────────
 const AGENTS = [
-  { name: 'Sachin', pin: '1234', phone: MY_PHONE_NUMBER  },
-  { name: 'Agent2', pin: '5678', phone: AGENT2_PHONE     },
-  { name: 'Agent3', pin: '9012', phone: AGENT3_PHONE     },
-];
+  { name: process.env.AGENT1_NAME || 'Sachin', pin: process.env.AGENT1_PIN || '1234', phone: MY_PHONE_NUMBER },
+  { name: process.env.AGENT2_NAME || 'Junior1', pin: process.env.AGENT2_PIN || '2222', phone: AGENT2_PHONE  },
+  { name: process.env.AGENT3_NAME || 'Junior2', pin: process.env.AGENT3_PIN || '3333', phone: AGENT3_PHONE  },
+  { name: process.env.AGENT4_NAME || 'Junior3', pin: process.env.AGENT4_PIN || '4444', phone: AGENT4_PHONE  },
+  { name: process.env.AGENT5_NAME || 'Junior4', pin: process.env.AGENT5_PIN || '5555', phone: AGENT5_PHONE  },
+].filter(a => a.phone); // only include agents that have a phone number configured
 
 const REQUIRED_ENV = [
   'TWILIO_ACCOUNT_SID',
@@ -383,6 +386,38 @@ app.get('/api/odoo/search', async (req, res) => {
 app.get('/api/odoo/contact', async (req, res) => {
   const partner = await findPartner(req.query.phone || '');
   res.json(partner);
+});
+
+// ── ODOO CONNECTIVITY TEST ────────────────────────────────────────────────────
+app.get('/api/odoo/test', async (req, res) => {
+  if (!ODOO_URL) return res.json({ ok: false, error: 'ODOO_URL not configured' });
+  try {
+    const auth = await odooUid();
+    if (!auth) return res.json({ ok: false, error: 'Authentication failed — check ODOO_DB, ODOO_USER, ODOO_PASS' });
+    const { uid, c } = auth;
+
+    // post a test note to the first lead found, or report no leads
+    const leads = await rpc(c.object, 'execute_kw', [
+      ODOO_DB, uid, ODOO_PASS, 'crm.lead', 'search_read',
+      [[['active', '=', true]]],
+      { fields: ['id', 'name'], limit: 1 },
+    ]);
+
+    if (!leads.length) {
+      return res.json({ ok: true, uid, message: 'Connected to Odoo ✓ — no active CRM leads found to test note posting' });
+    }
+
+    const lead = leads[0];
+    await rpc(c.object, 'execute_kw', [
+      ODOO_DB, uid, ODOO_PASS, 'crm.lead', 'message_post',
+      [[lead.id]],
+      { body: '🔧 Test note from call agent — Odoo note saving is working ✓', message_type: 'comment', subtype_xmlid: 'mail.mt_note' },
+    ]);
+
+    res.json({ ok: true, uid, message: `Note saved successfully on lead "${lead.name}" (id: ${lead.id}) ✓` });
+  } catch (e) {
+    res.json({ ok: false, error: e.message });
+  }
 });
 
 // ── SMS ───────────────────────────────────────────────────────────────────────
