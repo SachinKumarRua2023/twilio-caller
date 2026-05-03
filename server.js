@@ -211,15 +211,24 @@ app.post('/api/call', async (req, res) => {
   const agentPhone = agent.phone || MY_PHONE_NUMBER;
   const base       = getBaseUrl(req);
 
+  // Encode call metadata into callback URLs so Vercel serverless instances
+  // can log the call even if activeCalls is empty (no shared memory between requests).
+  const meta = new URLSearchParams({
+    agent: agent.name,
+    to,
+    dir: 'out',
+    ...(odooPartnerId   ? { pid:   String(odooPartnerId)   } : {}),
+    ...(odooPartnerName ? { pname: odooPartnerName         } : {}),
+  }).toString();
+
   try {
     const client = twilio(TWILIO_ACCOUNT_SID, TWILIO_AUTH_TOKEN);
 
-    // YOUR phone rings first. When you pick up, the lead's phone starts ringing.
-    // When lead answers → direct conversation. No announcements, no hold music.
+    // Agent's phone rings first. When answered, lead's phone starts ringing.
     const call = await client.calls.create({
       to:   agentPhone,
       from: TWILIO_NUMBER,
-      statusCallback:      `${base}/api/status`,
+      statusCallback:      `${base}/api/status?${meta}`,
       statusCallbackMethod:'POST',
       statusCallbackEvent: ['initiated','ringing','answered','completed'],
       twiml: `<?xml version="1.0" encoding="UTF-8"?>
@@ -227,7 +236,7 @@ app.post('/api/call', async (req, res) => {
   <Dial callerId="${TWILIO_NUMBER}"
         answerOnBridge="true"
         record="record-from-ringing"
-        recordingStatusCallback="${base}/api/recording"
+        recordingStatusCallback="${base}/api/recording?${meta}"
         recordingStatusCallbackMethod="POST"
         action="${base}/api/dial-done"
         method="POST"
@@ -303,6 +312,8 @@ app.post('/api/incoming', (req, res) => {
     odooPartnerId: null, odooPartnerName: null,
   };
 
+  const inMeta = new URLSearchParams({ agent: 'Incoming', to: from, dir: 'in' }).toString();
+
   res.setHeader('Content-Type', 'text/xml');
   res.send(`<?xml version="1.0" encoding="UTF-8"?>
 <Response>
@@ -310,13 +321,13 @@ app.post('/api/incoming', (req, res) => {
   <Dial callerId="${TWILIO_NUMBER}"
         answerOnBridge="true"
         record="record-from-ringing"
-        recordingStatusCallback="${base}/api/recording"
+        recordingStatusCallback="${base}/api/recording?${inMeta}"
         recordingStatusCallbackMethod="POST"
         action="${base}/api/dial-done"
         method="POST"
         timeout="30">
     <Number statusCallbackEvent="initiated ringing answered completed"
-            statusCallback="${base}/api/status"
+            statusCallback="${base}/api/status?${inMeta}"
             statusCallbackMethod="POST">${MY_PHONE_NUMBER}</Number>
   </Dial>
 </Response>`);
@@ -330,10 +341,37 @@ app.post('/api/dial-done', (req, res) => {
 });
 
 // ── RECORDING WEBHOOK ─────────────────────────────────────────────────────────
-app.post('/api/recording', (req, res) => {
+app.post('/api/recording', async (req, res) => {
   const { CallSid, RecordingUrl } = req.body;
-  if (CallSid && activeCalls[CallSid] && RecordingUrl) {
-    activeCalls[CallSid].recordingUrl = RecordingUrl + '.mp3';
+  if (!CallSid || !RecordingUrl) return res.sendStatus(200);
+
+  const mp3 = RecordingUrl + '.mp3';
+
+  if (activeCalls[CallSid]) {
+    activeCalls[CallSid].recordingUrl = mp3;
+  } else {
+    // Serverless: activeCalls is empty — log recording note directly to Odoo
+    const q = req.query;
+    const phone = q.to || '';
+    try {
+      const auth = await odooUid();
+      if (auth) {
+        const { uid, c } = auth;
+        let partnerId = q.pid ? parseInt(q.pid) : null;
+        if (!partnerId) {
+          const p = await findPartner(phone);
+          if (p) partnerId = p.id;
+        }
+        if (partnerId) {
+          const body = `🎙️ <b>Call Recording</b><br/>Agent: ${q.agent || 'Unknown'}<br/>Number: ${phone}<br/><a href="${mp3}">Play Recording</a>`;
+          await rpc(c.object, 'execute_kw', [
+            ODOO_DB, uid, ODOO_PASS, 'res.partner', 'message_post',
+            [[partnerId]],
+            { body, message_type: 'comment', subtype_xmlid: 'mail.mt_note' },
+          ]);
+        }
+      }
+    } catch(e) { console.error('Recording Odoo log error:', e.message); }
   }
   res.sendStatus(200);
 });
@@ -341,6 +379,7 @@ app.post('/api/recording', (req, res) => {
 // ── STATUS WEBHOOK (Twilio POST) + FRONTEND POLL (GET) ───────────────────────
 app.post('/api/status', async (req, res) => {
   const { CallStatus, From, CallSid, CallDuration } = req.body;
+  const q = req.query; // agent, to, dir, pid, pname — encoded when call was created
 
   if (['ringing','initiated'].includes(CallStatus) && From && !activeCalls[CallSid]) {
     incomingCall = { from: From, sid: CallSid, time: Date.now() };
@@ -349,14 +388,26 @@ app.post('/api/status', async (req, res) => {
   if (['completed','busy','failed','no-answer','canceled'].includes(CallStatus)) {
     if (incomingCall && incomingCall.sid === CallSid) incomingCall = null;
 
-    const info = activeCalls[CallSid];
-    if (info) {
-      const secs = parseInt(CallDuration || 0);
-      info.duration = `${Math.floor(secs/60)}:${String(secs%60).padStart(2,'0')}`;
-      info.status   = CallStatus;
-      await logCallToOdoo(info);
-      setTimeout(() => delete activeCalls[CallSid], 60000);
-    }
+    const secs = parseInt(CallDuration || 0);
+    const duration = `${Math.floor(secs/60)}:${String(secs%60).padStart(2,'0')}`;
+
+    // Use in-memory info if available; otherwise reconstruct from URL query params.
+    // The query-param fallback is essential on Vercel (serverless — no shared memory).
+    const info = activeCalls[CallSid] || {
+      callSid:         CallSid,
+      agent:           q.agent || (From === TWILIO_NUMBER ? 'Unknown Agent' : 'Inbound'),
+      to:              q.to   || From || '',
+      direction:       q.dir  || 'out',
+      recordingUrl:    null,
+      notes:           '',
+      odooPartnerId:   q.pid   ? parseInt(q.pid)  : null,
+      odooPartnerName: q.pname || null,
+    };
+
+    info.duration = duration;
+    info.status   = CallStatus;
+    await logCallToOdoo(info);
+    setTimeout(() => delete activeCalls[CallSid], 60000);
   }
   res.sendStatus(200);
 });
