@@ -90,6 +90,8 @@ app.post('/api/agent/login', (req, res) => {
 
 app.post('/api/agent/logout', (req, res) => res.json({ success: true }));
 
+app.get('/api/agents', (req, res) => res.json(AGENTS.map(a => a.name)));
+
 function getAgent(req) {
   return verifyToken(req.headers['x-agent-token']);
 }

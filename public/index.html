@@ -338,9 +338,7 @@ body {
   <div class="login-card">
     <label>AGENT NAME</label>
     <select id="agentName">
-      <option value="Sachin">Sachin</option>
-      <option value="Agent2">Agent 2</option>
-      <option value="Agent3">Agent 3</option>
+      <option value="">Loading agents…</option>
     </select>
     <label>PIN</label>
     <input type="password" id="agentPin" placeholder="Enter PIN" maxlength="6"/>
@@ -533,7 +531,15 @@ let selectedContact = null, acResults = [], acTimer = null;
 let logs = JSON.parse(localStorage.getItem('callLogs') || '[]');
 
 // ── BOOT ───────────────────────────────────────────────────────────────────────
-window.onload = () => {
+window.onload = async () => {
+  // Populate agent dropdown from server so adding/removing agents in env vars is automatic
+  try {
+    const agents = await fetch('/api/agents').then(r => r.json());
+    const sel = document.getElementById('agentName');
+    sel.innerHTML = agents.map(n => `<option value="${n}">${n}</option>`).join('');
+    if (agentName && agents.includes(agentName)) sel.value = agentName;
+  } catch(e) { /* keep loading placeholder if fetch fails */ }
+
   if (agentToken && agentName) showApp();
   renderLogs(); calcStats();
   document.getElementById('agentPin').addEventListener('keydown', e => { if(e.key==='Enter') doLogin(); });
